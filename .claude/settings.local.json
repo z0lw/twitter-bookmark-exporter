@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(copy manifest.json manifest_original.json)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Read(/C:\\Users\\3122.2-1\\Downloads/**)",
+      "Read(/C:\\Users\\3122.2-1\\Downloads/**)",
+      "Read(/C:\\Users\\3122.2-1\\Downloads/**)",
+      "Read(/C:\\Users\\3122.2-1\\Downloads/**)"
     ],
     "deny": [],
     "ask": []

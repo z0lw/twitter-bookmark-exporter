@@ -139,11 +139,17 @@ function convertToCSV(data) {
                     userCore = tweet.core.user_results.result.core;
                 }
                 
+                // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
+                let tweetText = legacy.full_text || '';
+                if (tweet.note_tweet?.is_expandable && tweet.note_tweet?.note_tweet_results?.result?.text) {
+                    tweetText = tweet.note_tweet.note_tweet_results.result.text;
+                }
+                
                 const row = [
                     `"${new Date(legacy.created_at).toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})}"`,
                     `"${(userCore.name || '').replace(/"/g, '""')}"`,
                     `"${userCore.screen_name || ''}"`,
-                    `"${(legacy.full_text || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+                    `"${tweetText.replace(/"/g, '""').replace(/\n/g, ' ')}"`,
                     legacy.favorite_count || 0,
                     legacy.retweet_count || 0,
                     `"https://x.com/${userCore.screen_name}/status/${legacy.id_str}"`
@@ -172,9 +178,15 @@ function convertToText(data) {
                     userCore = tweet.core.user_results.result.core;
                 }
                 
+                // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
+                let tweetText = legacy.full_text || '';
+                if (tweet.note_tweet?.is_expandable && tweet.note_tweet?.note_tweet_results?.result?.text) {
+                    tweetText = tweet.note_tweet.note_tweet_results.result.text;
+                }
+                
                 text += `${index + 1}. ${userCore.name || ''} (@${userCore.screen_name || ''})\n`;
                 text += `日時: ${new Date(legacy.created_at).toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})}\n`;
-                text += `内容: ${legacy.full_text}\n`;
+                text += `内容: ${tweetText}\n`;
                 text += `いいね: ${legacy.favorite_count} | RT: ${legacy.retweet_count}\n`;
                 text += `URL: https://x.com/${userCore.screen_name}/status/${legacy.id_str}\n`;
                 text += `-`.repeat(30) + '\n\n';
@@ -186,27 +198,12 @@ function convertToText(data) {
 }
 
 async function downloadMarkdownFiles(data) {
-    // 個別ファイルダウンロード方式（ZIPの代わり）
+    // 個別ファイルダウンロード方式のみ
     let fileCount = 0;
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // バンドル形式のMarkdownファイルを1つ作成
-    const bundleContent = convertToMarkdownBundle(data);
-    const blob = new Blob([bundleContent], { type: 'text/markdown;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `twitter_bookmarks_${new Date().toISOString().split('T')[0]}_all.md`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    
-    console.log('✅ Generated bundle markdown file');
-    
-    // 個別ファイルを連続ダウンロード（短い間隔で）
-    if (confirm('個別のMarkdownファイルもダウンロードしますか？（連続ダウンロードが開始されます）')) {
-        for (let index = 0; index < data.length; index++) {
+    // 個別ファイルを連続ダウンロード
+    for (let index = 0; index < data.length; index++) {
             const item = data[index];
             if (item.content && item.content.itemContent && item.content.itemContent.tweet_results) {
                 const tweet = item.content.itemContent.tweet_results.result;
@@ -235,9 +232,8 @@ async function downloadMarkdownFiles(data) {
                     }
                 }
             }
-        }
-        console.log(`✅ Generated ${fileCount} individual markdown files`);
     }
+    console.log(`✅ Generated ${fileCount} individual markdown files`);
 }
 
 function convertToMarkdown(item) {
@@ -321,7 +317,14 @@ function convertToMarkdown(item) {
     }
     
     markdown += `---\n\n`;
-    markdown += `${legacy.full_text || ''}\n\n`;
+    
+    // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
+    let tweetText = legacy.full_text || '';
+    if (tweet.note_tweet?.is_expandable && tweet.note_tweet?.note_tweet_results?.result?.text) {
+        tweetText = tweet.note_tweet.note_tweet_results.result.text;
+    }
+    
+    markdown += `${tweetText}\n\n`;
     
     // メディア画像の埋め込み
     if (mediaUrls.length > 0) {
@@ -334,20 +337,3 @@ function convertToMarkdown(item) {
     return markdown;
 }
 
-function convertToMarkdownBundle(data) {
-    let content = `# Twitter ブックマークエクスポート\n\n`;
-    content += `出力日時: ${new Date().toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})}\n`;
-    content += `総件数: ${data.length}件\n\n`;
-    content += `---\n\n`;
-    
-    data.forEach((item, index) => {
-        if (item.content && item.content.itemContent && item.content.itemContent.tweet_results) {
-            const markdown = convertToMarkdown(item);
-            content += `# ツイート ${index + 1}\n\n`;
-            content += markdown;
-            content += `\n---\n\n`;
-        }
-    });
-    
-    return content;
-}
