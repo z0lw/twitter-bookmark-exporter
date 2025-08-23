@@ -11,7 +11,9 @@ function loadSettings() {
         countLimit: 'all',
         customCount: 2000,
         dateLimit: 'all',
-        customDate: getDefaultDate()
+        customDate: getDefaultDate(),
+        downloadFolder: 'Twitter-Bookmarks',
+        lastExportTimestamp: null
     }, (settings) => {
         // 件数制限の復元
         document.querySelector(`input[name="count_limit"][value="${settings.countLimit}"]`).checked = true;
@@ -20,6 +22,25 @@ function loadSettings() {
         // 期間制限の復元
         document.querySelector(`input[name="date_limit"][value="${settings.dateLimit}"]`).checked = true;
         document.getElementById('custom_date').value = settings.customDate;
+        
+        // ダウンロードフォルダの復元
+        document.getElementById('download_folder').value = settings.downloadFolder;
+        
+        // 前回エクスポート日時の表示
+        if (settings.lastExportTimestamp) {
+            const lastDate = new Date(settings.lastExportTimestamp);
+            const displayDate = lastDate.toLocaleString('ja-JP', {
+                timeZone: 'Asia/Tokyo',
+                year: 'numeric',
+                month: '2-digit', 
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            document.getElementById('last_export_info').textContent = `前回: ${displayDate}`;
+            document.getElementById('last_export_info').style.display = 'block';
+        }
         
         updateInputStates();
     });
@@ -37,12 +58,6 @@ function setupEventListeners() {
     
     // 開始ボタン
     document.getElementById('startBtn').addEventListener('click', startDownload);
-    
-    // 設定リンク
-    document.getElementById('settingsLink').addEventListener('click', (e) => {
-        e.preventDefault();
-        chrome.runtime.openOptionsPage();
-    });
 }
 
 function updateInputStates() {
@@ -60,6 +75,7 @@ function startDownload() {
     const customCount = parseInt(document.getElementById('custom_count').value);
     const dateLimit = document.querySelector('input[name="date_limit"]:checked').value;
     const customDate = document.getElementById('custom_date').value;
+    const downloadFolder = document.getElementById('download_folder').value.trim();
     
     // バリデーション
     if (countLimit === 'custom' && (isNaN(customCount) || customCount < 1 || customCount > 10000)) {
@@ -72,12 +88,19 @@ function startDownload() {
         return;
     }
     
+    // フォルダ名の検証
+    if (downloadFolder && !/^[a-zA-Z0-9_\-\s\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]+$/.test(downloadFolder)) {
+        showStatus('フォルダ名に無効な文字が含まれています', 'error');
+        return;
+    }
+    
     // 設定を保存してからダウンロード開始
     const settingsToSave = {
         countLimit: countLimit,
         customCount: customCount,
         dateLimit: dateLimit,
-        customDate: customDate
+        customDate: customDate,
+        downloadFolder: downloadFolder || 'Twitter-Bookmarks'
     };
     console.log('💾 Saving settings:', settingsToSave);
     chrome.storage.sync.set(settingsToSave, () => {

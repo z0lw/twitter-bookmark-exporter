@@ -187,8 +187,20 @@
                     <label for="date_all">制限なし</label>
                 </div>
                 <div class="option-item">
+                    <input type="radio" id="date_last_export" name="date_limit" value="last_export">
+                    <label for="date_last_export">前回エクスポート以降</label>
+                </div>
+                <div class="option-item">
                     <input type="radio" id="date_1month" name="date_limit" value="1month">
                     <label for="date_1month">過去1ヶ月</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="date_6month" name="date_limit" value="6month">
+                    <label for="date_6month">過去6ヶ月</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="date_1year" name="date_limit" value="1year">
+                    <label for="date_1year">過去1年</label>
                 </div>
                 <div class="option-item">
                     <input type="radio" id="date_3month" name="date_limit" value="3month">
@@ -200,6 +212,24 @@
                     <input type="date" id="custom_date" class="custom-input" disabled>
                 </div>
             </div>
+            <div id="last_export_info" style="color: #6c757d; font-size: 11px; margin-top: 5px; display: none;">
+                前回: --
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                📁 保存フォルダ
+            </div>
+            <div class="options">
+                <div class="option-item" style="flex-direction: column; align-items: stretch;">
+                    <label for="download_folder" style="margin-bottom: 5px; font-size: 12px;">Downloads内のサブフォルダ名:</label>
+                    <input type="text" id="download_folder" class="custom-input" placeholder="Twitter-Bookmarks" maxlength="50" style="width: 100%; margin-left: 0;">
+                    <small style="color: #6c757d; font-size: 10px; margin-top: 3px;">
+                        空欄の場合はDownloadsフォルダに直接保存
+                    </small>
+                </div>
+            </div>
         </div>
 
         <button class="start-button" id="startBtn">
@@ -207,8 +237,6 @@
         </button>
 
         <div class="status" id="status"></div>
-
-        <a href="#" class="settings-link" id="settingsLink">⚙️ 詳細設定を開く</a>
     </div>
 
     <script src="popup.js"></script>

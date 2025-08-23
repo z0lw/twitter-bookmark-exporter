@@ -10,7 +10,6 @@
     "unlimitedStorage",
     "downloads"
   ],
-  "options_page": "settings.html",
   "background": {
     "service_worker": "background_local.js"
   },

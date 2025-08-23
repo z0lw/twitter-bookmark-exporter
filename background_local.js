@@ -34,7 +34,8 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
       countLimit: 'all',
       customCount: 2000,
       dateLimit: 'all',
-      customDate: getDefaultDate()
+      customDate: getDefaultDate(),
+      lastExportTimestamp: null
     });
     
     // 日付フィルタリング: 古いツイートを個別に除外
@@ -58,13 +59,21 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
         case 'custom':
           cutoffDate = new Date(settings.customDate);
           break;
+        case 'last_export':
+          if (settings.lastExportTimestamp) {
+            cutoffDate = new Date(settings.lastExportTimestamp);
+            console.log('📅 Using last export timestamp:', cutoffDate.toISOString());
+          }
+          break;
       }
       
       if (cutoffDate) {
         const originalCount = filteredEntries.length;
+        const cutoffTimestamp = cutoffDate.getTime(); // ミリ秒レベルでの厳密な比較
+        
         filteredEntries = filteredEntries.filter(entry => {
-          const entryDate = new Date(Number(BigInt(entry.sortIndex) >> BigInt(20)));
-          return entryDate >= cutoffDate;
+          const entryTimestamp = Number(BigInt(entry.sortIndex) >> BigInt(20));
+          return entryTimestamp >= cutoffTimestamp;
         });
         console.log('📅 Date filtered from', originalCount, 'to', filteredEntries.length, 'entries (cutoff:', cutoffDate.toISOString(), ')');
       }
@@ -112,12 +121,22 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
         const finalBookmarks = [...bookmarks]; // コピーを作成
         const finalCount = finalBookmarks.length;
         
+        // エクスポート完了時刻を記録（秒単位の精度）
+        const exportTimestamp = new Date().getTime();
+        
         // ローカルストレージに保存
         chrome.storage.local.set({
           bookmarks: JSON.stringify(finalBookmarks),
-          sync_at: new Date().getTime()
+          sync_at: exportTimestamp
         }).then(() => {
           console.log('💾 Bookmarks saved to storage, count:', finalCount);
+          
+          // 前回エクスポート日時を設定に記録
+          chrome.storage.sync.set({
+            lastExportTimestamp: exportTimestamp
+          }, () => {
+            console.log('📅 Export timestamp saved:', new Date(exportTimestamp).toISOString());
+          });
           // ダウンロード完了後は結果ページを開く（データ件数をURLパラメータで渡す）
           // デバッグのためページを閉じずに新しいタブで開く
           chrome.tabs.create({
