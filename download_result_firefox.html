@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitter Bookmarks Export - Firefox版結果</title>
+    <style>
+        body {
+            font-family: 'TwitterChirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #1da1f2 0%, #1a91da 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            max-width: 600px;
+            width: 90%;
+        }
+        .success-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        .count {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1da1f2;
+            margin: 20px 0;
+        }
+        .download-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        .download-btn {
+            background: #1da1f2;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .download-btn:hover {
+            background: #1a91da;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(29, 161, 242, 0.3);
+        }
+        .download-btn.secondary {
+            background: #657786;
+        }
+        .download-btn.secondary:hover {
+            background: #5b7083;
+        }
+        .info {
+            color: #657786;
+            font-size: 14px;
+            margin-top: 20px;
+            line-height: 1.5;
+        }
+        .status-message {
+            background: #e3f2fd;
+            border: 1px solid #1da1f2;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #1565c0;
+            font-weight: bold;
+            display: none;
+            text-align: center;
+        }
+        .status-message.processing {
+            background: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        .status-message.success {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
+        .firefox-badge {
+            background: #ff7139;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="firefox-badge">🦊 Firefox版</div>
+        <div class="success-icon">✅</div>
+        <h1>エクスポート完了！</h1>
+        <div class="count" id="bookmarkCount">0件</div>
+        <p>ブックマークの取得が完了しました</p>
+        
+        <div class="status-message" id="statusMessage"></div>
+        
+        <div class="download-buttons">
+            <button class="download-btn" id="downloadJSON">
+                📄 JSON形式でダウンロード
+            </button>
+            <button class="download-btn" id="downloadCSV">
+                📊 CSV形式でダウンロード
+            </button>
+            <button class="download-btn secondary" id="downloadTXT">
+                📝 テキスト形式でダウンロード
+            </button>
+            <button class="download-btn" id="downloadMarkdown" style="background: #28a745;">
+                📝 Markdown形式でダウンロード
+            </button>
+        </div>
+        
+        <div class="info">
+            <p>💾 データはローカルに保存されています</p>
+            <p>🔒 外部サーバーには送信されません</p>
+            <p>🦊 Firefox版では一部機能が制限される場合があります</p>
+        </div>
+    </div>
+
+    <script src="download_result_firefox.js"></script>
+</body>
+</html>

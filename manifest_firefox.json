@@ -1,0 +1,41 @@
+{
+  "manifest_version": 2,
+  "name": "Twitter Bookmarks Export - Firefox",
+  "version": "1.7.0",
+  "description": "Firefox版：Twitterブックマークをエクスポート",
+  "permissions": [
+    "webRequest",
+    "storage",
+    "unlimitedStorage",
+    "downloads",
+    "https://twitter.com/*",
+    "https://x.com/*"
+  ],
+  "background": {
+    "scripts": ["background_firefox.js"],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "Twitter Bookmarks Export"
+  },
+  "icons": {
+    "128": "icon128.34baf118.png"
+  },
+  "content_security_policy": "script-src 'self'; object-src 'self'",
+  "web_accessible_resources": [
+    "download_result.html",
+    "download_result.js",
+    "download_result_firefox.html",
+    "download_result_firefox.js",
+    "popup.html",
+    "popup.js"
+  ],
+  "content_scripts": [
+    {
+      "js": ["content_firefox.js"],
+      "run_at": "document_start",
+      "matches": ["https://twitter.com/*", "https://x.com/*"]
+    }
+  ]
+}
