@@ -76,6 +76,27 @@
             margin-top: 20px;
             line-height: 1.5;
         }
+        .status-message {
+            background: #e3f2fd;
+            border: 1px solid #1da1f2;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #1565c0;
+            font-weight: bold;
+            display: none;
+            text-align: center;
+        }
+        .status-message.processing {
+            background: #fff3cd;
+            border-color: #ffc107;
+            color: #856404;
+        }
+        .status-message.success {
+            background: #d4edda;
+            border-color: #28a745;
+            color: #155724;
+        }
     </style>
 </head>
 <body>
@@ -84,6 +105,8 @@
         <h1>エクスポート完了！</h1>
         <div class="count" id="bookmarkCount">0件</div>
         <p>ブックマークの取得が完了しました</p>
+        
+        <div class="status-message" id="statusMessage"></div>
         
         <div class="download-buttons">
             <button class="download-btn" id="downloadJSON">

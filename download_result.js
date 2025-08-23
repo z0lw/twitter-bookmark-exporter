@@ -216,23 +216,101 @@ function convertToText(data) {
 async function downloadMarkdownFiles(data) {
     console.log(`🔍 Starting Markdown export for ${data.length} items`);
     
-    // データの重複チェック
-    const tweetIds = data.map(item => {
-        if (item.content?.itemContent?.tweet_results?.result?.rest_id) {
-            return item.content.itemContent.tweet_results.result.rest_id;
+    // 処理開始メッセージを表示
+    showStatusMessage(`📝 Markdownファイルの生成を開始しています... (${data.length}件)`, 'processing');
+    
+    // データ構造の詳細分析
+    let validTweetCount = 0;
+    let hasLegacyCount = 0;
+    let validTweetIds = [];
+    let noLegacyTweets = [];
+    
+    data.forEach((item, index) => {
+        if (item.content?.itemContent?.tweet_results?.result) {
+            validTweetCount++;
+            let tweet = item.content.itemContent.tweet_results.result;
+            
+            // TweetWithVisibilityResultsの場合、内部のtweetをチェック
+            let actualTweet = tweet;
+            if (tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) {
+                actualTweet = tweet.tweet;
+            }
+            
+            if (actualTweet.legacy) {
+                hasLegacyCount++;
+            } else {
+                // legacyデータがないツイートの詳細を記録
+                const detailInfo = {
+                    index: index,
+                    tweetId: tweet.rest_id || 'no_id',
+                    typename: tweet.__typename,
+                    tombstone: tweet.tombstone,
+                    unavailable_message: tweet.unavailable_message,
+                    reason: tweet.reason || 'unknown',
+                    keys: Object.keys(tweet)
+                };
+                
+                // TweetWithVisibilityResultsの場合、内部構造を調査
+                if (tweet.__typename === 'TweetWithVisibilityResults') {
+                    detailInfo.innerTweet = tweet.tweet ? {
+                        typename: tweet.tweet.__typename,
+                        rest_id: tweet.tweet.rest_id,
+                        hasLegacy: !!tweet.tweet.legacy,
+                        keys: Object.keys(tweet.tweet)
+                    } : null;
+                    detailInfo.limitedActions = tweet.limitedActionResults;
+                }
+                
+                noLegacyTweets.push(detailInfo);
+            }
+            if (actualTweet.rest_id) {
+                validTweetIds.push(actualTweet.rest_id);
+            }
         }
-        return null;
-    }).filter(id => id);
+    });
     
-    const uniqueTweetIds = new Set(tweetIds);
-    console.log(`📊 Total items: ${data.length}, Valid tweets: ${tweetIds.length}, Unique tweet IDs: ${uniqueTweetIds.size}`);
+    const uniqueTweetIds = new Set(validTweetIds);
+    console.log(`📊 Data analysis:`);
+    console.log(`  - Total items: ${data.length}`);
+    console.log(`  - Valid tweet objects: ${validTweetCount}`);
+    console.log(`  - With legacy data: ${hasLegacyCount}`);
+    console.log(`  - Valid tweet IDs: ${validTweetIds.length}`);
+    console.log(`  - Unique tweet IDs: ${uniqueTweetIds.size}`);
     
-    if (tweetIds.length !== uniqueTweetIds.size) {
-        console.warn(`⚠️ Duplicate tweet IDs detected! ${tweetIds.length - uniqueTweetIds.size} duplicates found`);
+    if (validTweetIds.length !== uniqueTweetIds.size) {
+        console.warn(`⚠️ Duplicate tweet IDs detected! ${validTweetIds.length - uniqueTweetIds.size} duplicates found`);
         
         // 重複IDを表示
-        const duplicates = tweetIds.filter((id, index) => tweetIds.indexOf(id) !== index);
+        const duplicates = validTweetIds.filter((id, index) => validTweetIds.indexOf(id) !== index);
         console.log('Duplicate IDs:', [...new Set(duplicates)]);
+    }
+    
+    // legacyデータがないツイートの詳細を表示
+    if (noLegacyTweets.length > 0) {
+        console.warn(`⚠️ ${noLegacyTweets.length} tweets without legacy data found:`);
+        noLegacyTweets.forEach((tweet, i) => {
+            console.log(`${i + 1}. Index ${tweet.index}: ${tweet.tweetId}`);
+            console.log(`   Type: ${tweet.typename}`);
+            console.log(`   Reason: ${tweet.reason}`);
+            console.log(`   Available keys: ${tweet.keys.join(', ')}`);
+            
+            if (tweet.innerTweet) {
+                console.log(`   Inner tweet: ${tweet.innerTweet.typename} (ID: ${tweet.innerTweet.rest_id})`);
+                console.log(`   Inner has legacy: ${tweet.innerTweet.hasLegacy}`);
+                console.log(`   Inner keys: ${tweet.innerTweet.keys.join(', ')}`);
+            }
+            
+            if (tweet.limitedActions) {
+                console.log(`   Limited actions: ${JSON.stringify(tweet.limitedActions)}`);
+            }
+            
+            if (tweet.tombstone) {
+                console.log(`   Tombstone: ${JSON.stringify(tweet.tombstone)}`);
+            }
+            if (tweet.unavailable_message) {
+                console.log(`   Unavailable: ${JSON.stringify(tweet.unavailable_message)}`);
+            }
+        });
     }
     
     // 設定を最初に一度だけ取得
@@ -249,7 +327,13 @@ async function downloadMarkdownFiles(data) {
     for (let index = 0; index < data.length; index++) {
         const item = data[index];
         if (item.content && item.content.itemContent && item.content.itemContent.tweet_results) {
-            const tweet = item.content.itemContent.tweet_results.result;
+            let tweet = item.content.itemContent.tweet_results.result;
+            
+            // TweetWithVisibilityResultsの場合、内部のtweetを取得
+            if (tweet && tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) {
+                tweet = tweet.tweet;
+            }
+            
             if (tweet && tweet.legacy) {
                 const tweetId = tweet.rest_id || `tweet_${index + 1}`;
                 
@@ -305,7 +389,7 @@ async function downloadMarkdownFiles(data) {
                         // URL解放を少し遅延させる
                         setTimeout(() => {
                             URL.revokeObjectURL(url);
-                        }, 1000);
+                        }, 500);
                         
                         resolve();
                     });
@@ -314,20 +398,33 @@ async function downloadMarkdownFiles(data) {
                 fileCount++;
                 console.log(`📝 Downloaded ${fileCount}/${data.length}: ${filename}`);
                 
-                // ブラウザが詰まらないよう待機
-                if (index % 5 === 4) { // 5ファイルごとに長めの休憩
-                    await delay(1000);
+                // ブラウザが詰まらないよう待機（遅延を短縮）
+                if (index % 10 === 9) { // 10ファイルごとに少し休憩
+                    await delay(300);
                 } else {
-                    await delay(200);
+                    await delay(50);
                 }
             }
         }
     }
-    console.log(`✅ Generated ${fileCount} individual markdown files`);
+    
+    console.log(`✅ Markdown export completed:`);
+    console.log(`  - Items processed: ${data.length}`);
+    console.log(`  - Files created: ${fileCount}`);
+    console.log(`  - Expected files (with legacy): ${hasLegacyCount}`);
+    console.log(`  - Unique tweet IDs: ${uniqueTweetIds.size}`);
+    
+    // 完了メッセージを表示
+    showStatusMessage(`✅ ${fileCount}個のMarkdownファイルが生成されました！`, 'success');
 }
 
 function convertToMarkdown(item) {
-    const tweet = item.content.itemContent.tweet_results.result;
+    let tweet = item.content.itemContent.tweet_results.result;
+    
+    // TweetWithVisibilityResultsの場合、内部のtweetを取得
+    if (tweet && tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) {
+        tweet = tweet.tweet;
+    }
     const legacy = tweet.legacy;
     
     // ユーザー情報の取得パスを修正（実際のJSON構造に基づく）
@@ -410,6 +507,19 @@ function convertToMarkdown(item) {
     markdown += `twi_source: ${sourceUrl}\n`;
     markdown += `twi_profile_icon_url: ${avatar.image_url || ''}\n`;
     markdown += `twi_content: "${escapedText}"\n`;
+    markdown += `twi_possibly_sensitive: ${legacy.possibly_sensitive || false}\n`;
+    markdown += `twi_possibly_sensitive_editable: ${legacy.possibly_sensitive_editable || false}\n`;
+    
+    // sensitive_media_warning情報を追加
+    if (legacy.sensitive_media_warning) {
+        markdown += `twi_sensitive_media_adult_content: ${legacy.sensitive_media_warning.adult_content || false}\n`;
+        markdown += `twi_sensitive_media_graphic_violence: ${legacy.sensitive_media_warning.graphic_violence || false}\n`;
+        markdown += `twi_sensitive_media_other: ${legacy.sensitive_media_warning.other || false}\n`;
+    } else {
+        markdown += `twi_sensitive_media_adult_content: false\n`;
+        markdown += `twi_sensitive_media_graphic_violence: false\n`;
+        markdown += `twi_sensitive_media_other: false\n`;
+    }
     
     // メディアURL（最大4つ）
     for (let i = 0; i < 4; i++) {
@@ -429,5 +539,21 @@ function convertToMarkdown(item) {
     }
     
     return markdown;
+}
+
+function showStatusMessage(message, type = 'info') {
+    const statusElement = document.getElementById('statusMessage');
+    if (statusElement) {
+        statusElement.textContent = message;
+        statusElement.className = `status-message ${type}`;
+        statusElement.style.display = 'block';
+        
+        // 成功メッセージは5秒後に非表示
+        if (type === 'success') {
+            setTimeout(() => {
+                statusElement.style.display = 'none';
+            }, 5000);
+        }
+    }
 }
 

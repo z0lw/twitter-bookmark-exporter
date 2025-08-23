@@ -96,15 +96,24 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
     
     bookmarks = bookmarks.concat(filteredEntries);
     
-    // バッジにカウント表示
-    chrome.action.setBadgeText({text: bookmarks.length.toString()});
-    console.log('📊 Total bookmarks now:', bookmarks.length);
+    // 重複を除外してユニークなブックマーク数をカウント（すべて含む）
+    const uniqueBookmarks = bookmarks.filter((bookmark, index, array) => {
+      if (bookmark.content?.itemContent?.tweet_results?.result?.rest_id) {
+        const tweetId = bookmark.content.itemContent.tweet_results.result.rest_id;
+        return array.findIndex(b => b.content?.itemContent?.tweet_results?.result?.rest_id === tweetId) === index;
+      }
+      return true; // IDがない場合は残す
+    });
+    
+    // バッジにユニークカウント表示
+    chrome.action.setBadgeText({text: uniqueBookmarks.length.toString()});
+    console.log('📊 Total bookmarks:', bookmarks.length, '(unique:', uniqueBookmarks.length, ')');
     
     // 制限に達したら強制停止をcontent scriptに通知（finish_downloadは送信しない）
     if (settings.countLimit !== 'all') {
       const maxCount = settings.countLimit === 'custom' ? settings.customCount : parseInt(settings.countLimit);
-      if (bookmarks.length >= maxCount) {
-        console.log('📊 Reached count limit in background, signaling content script to stop');
+      if (uniqueBookmarks.length >= maxCount) {
+        console.log('📊 Reached unique count limit in background, signaling content script to stop');
         chrome.tabs.sendMessage(currentTab.id, {action: "stop_download", reason: "count_limit_reached"});
         // returnしてこのページの処理を終了
         return;
@@ -116,10 +125,17 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
       setTimeout(() => {
         isDownloading = false;
         chrome.action.setBadgeText({text: ""});
-        console.log('✅ Finishing download with', bookmarks.length, 'total bookmarks');
+        // 最終的に重複を除外したユニークなブックマークを保存（すべて含む）
+        const finalBookmarks = bookmarks.filter((bookmark, index, array) => {
+          if (bookmark.content?.itemContent?.tweet_results?.result?.rest_id) {
+            const tweetId = bookmark.content.itemContent.tweet_results.result.rest_id;
+            return array.findIndex(b => b.content?.itemContent?.tweet_results?.result?.rest_id === tweetId) === index;
+          }
+          return true; // IDがない場合は残す
+        });
         
-        const finalBookmarks = [...bookmarks]; // コピーを作成
         const finalCount = finalBookmarks.length;
+        console.log('✅ Finishing download with', bookmarks.length, 'total bookmarks (', finalCount, 'unique)');
         
         // エクスポート完了時刻を記録（秒単位の精度）
         const exportTimestamp = new Date().getTime();
