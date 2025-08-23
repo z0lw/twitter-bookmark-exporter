@@ -214,62 +214,114 @@ function convertToText(data) {
 }
 
 async function downloadMarkdownFiles(data) {
-    // 個別ファイルダウンロード方式のみ
+    console.log(`🔍 Starting Markdown export for ${data.length} items`);
+    
+    // データの重複チェック
+    const tweetIds = data.map(item => {
+        if (item.content?.itemContent?.tweet_results?.result?.rest_id) {
+            return item.content.itemContent.tweet_results.result.rest_id;
+        }
+        return null;
+    }).filter(id => id);
+    
+    const uniqueTweetIds = new Set(tweetIds);
+    console.log(`📊 Total items: ${data.length}, Valid tweets: ${tweetIds.length}, Unique tweet IDs: ${uniqueTweetIds.size}`);
+    
+    if (tweetIds.length !== uniqueTweetIds.size) {
+        console.warn(`⚠️ Duplicate tweet IDs detected! ${tweetIds.length - uniqueTweetIds.size} duplicates found`);
+        
+        // 重複IDを表示
+        const duplicates = tweetIds.filter((id, index) => tweetIds.indexOf(id) !== index);
+        console.log('Duplicate IDs:', [...new Set(duplicates)]);
+    }
+    
+    // 設定を最初に一度だけ取得
+    const settings = await new Promise((resolve) => {
+        chrome.storage.sync.get({downloadFolder: 'Twitter-Bookmarks'}, resolve);
+    });
+    
     let fileCount = 0;
+    const usedFilenames = new Set(); // 重複ファイル名を防ぐ
+    const processedTweetIds = new Set(); // 処理済みツイートIDを追跡
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     // 個別ファイルを連続ダウンロード
     for (let index = 0; index < data.length; index++) {
-            const item = data[index];
-            if (item.content && item.content.itemContent && item.content.itemContent.tweet_results) {
-                const tweet = item.content.itemContent.tweet_results.result;
-                if (tweet && tweet.legacy) {
-                    const markdown = convertToMarkdown(item);
-                    const tweetId = tweet.rest_id || `tweet_${index + 1}`;
-                    
-                    // ユーザー名取得
-                    let username = 'unknown';
-                    if (tweet.core?.user_results?.result?.core?.screen_name) {
-                        username = tweet.core.user_results.result.core.screen_name;
-                    }
-                    
-                    const filename = `@${username}_${tweetId}.md`;
-                    
+        const item = data[index];
+        if (item.content && item.content.itemContent && item.content.itemContent.tweet_results) {
+            const tweet = item.content.itemContent.tweet_results.result;
+            if (tweet && tweet.legacy) {
+                const tweetId = tweet.rest_id || `tweet_${index + 1}`;
+                
+                // 重複処理チェック
+                if (processedTweetIds.has(tweetId)) {
+                    console.warn(`🔄 Skipping duplicate tweet ID: ${tweetId} at index ${index}`);
+                    continue;
+                }
+                processedTweetIds.add(tweetId);
+                
+                const markdown = convertToMarkdown(item);
+                
+                // ユーザー名取得
+                let username = 'unknown';
+                if (tweet.core?.user_results?.result?.core?.screen_name) {
+                    username = tweet.core.user_results.result.core.screen_name;
+                }
+                
+                // 一意のファイル名を生成（重複を防ぐ）
+                let baseFilename = `@${username}_${tweetId}`;
+                let filename = `${baseFilename}.md`;
+                let counter = 1;
+                
+                while (usedFilenames.has(filename)) {
+                    filename = `${baseFilename}_${counter}.md`;
+                    counter++;
+                }
+                usedFilenames.add(filename);
+                
+                const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/markdown/${filename}` : `markdown/${filename}`;
+                
+                // Promise化されたダウンロード処理
+                await new Promise((resolve, reject) => {
                     const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
                     const url = URL.createObjectURL(blob);
                     
-                    // 設定からフォルダ名を取得してMarkdownサブフォルダに保存
-                    chrome.storage.sync.get({downloadFolder: 'Twitter-Bookmarks'}, (settings) => {
-                        const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/markdown/${filename}` : `markdown/${filename}`;
+                    chrome.downloads.download({
+                        url: url,
+                        filename: folderPath,
+                        saveAs: false
+                    }, (downloadId) => {
+                        if (chrome.runtime.lastError) {
+                            console.warn(`Download API failed for ${filename}, using fallback:`, chrome.runtime.lastError.message);
+                            // フォールバック: 従来の方法
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = filename;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                        }
                         
-                        chrome.downloads.download({
-                            url: url,
-                            filename: folderPath,
-                            saveAs: false
-                        }, (downloadId) => {
-                            if (chrome.runtime.lastError) {
-                                // フォールバック: 従来の方法
-                                const link = document.createElement('a');
-                                link.href = url;
-                                link.download = filename;
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                            }
+                        // URL解放を少し遅延させる
+                        setTimeout(() => {
                             URL.revokeObjectURL(url);
-                        });
+                        }, 1000);
+                        
+                        resolve();
                     });
-                    
-                    fileCount++;
-                    
-                    // ブラウザが詰まらないよう少し待機
-                    if (index % 10 === 9) { // 10ファイルごとに少し長めの休憩
-                        await delay(500);
-                    } else {
-                        await delay(100);
-                    }
+                });
+                
+                fileCount++;
+                console.log(`📝 Downloaded ${fileCount}/${data.length}: ${filename}`);
+                
+                // ブラウザが詰まらないよう待機
+                if (index % 5 === 4) { // 5ファイルごとに長めの休憩
+                    await delay(1000);
+                } else {
+                    await delay(200);
                 }
             }
+        }
     }
     console.log(`✅ Generated ${fileCount} individual markdown files`);
 }
