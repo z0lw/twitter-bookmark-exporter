@@ -142,32 +142,11 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
         break;
       }
 
-      // 停止条件チェック（停止条件がない場合は全件取得）
-      if (stopCondition) {
-        let shouldStop = false;
-        
-        if (stopCondition.type === "count") {
-          console.log('📊 Checking count limit:', totalCount, 'vs', stopCondition.value);
-          if (totalCount >= stopCondition.value) {
-            console.log('📊 Reached count limit:', totalCount, '>=', stopCondition.value);
-            shouldStop = true;
-          }
-        } else if (stopCondition.type === "date") {
-          if (checkDateCondition(response, stopCondition.value)) {
-            console.log('📅 Reached date limit:', stopCondition.value);
-            shouldStop = true;
-          }
-        } else if (stopCondition.type === "both") {
-          if (totalCount >= stopCondition.count) {
-            console.log('📊 Reached count limit in both condition:', totalCount);
-            shouldStop = true;
-          } else if (checkDateCondition(response, stopCondition.date)) {
-            console.log('📅 Reached date limit in both condition:', stopCondition.date);
-            shouldStop = true;
-          }
-        }
-        
-        if (shouldStop) {
+      // 停止条件チェック（件数制限のみ、日付は個別フィルタリングで処理）
+      if (stopCondition && stopCondition.type === "count") {
+        console.log('📊 Checking count limit:', totalCount, 'vs', stopCondition.value);
+        if (totalCount >= stopCondition.value) {
+          console.log('📊 Reached count limit:', totalCount, '>=', stopCondition.value);
           break;
         }
       }
@@ -273,13 +252,8 @@ function checkSortIndexCondition(response, sortIndexValue) {
   return entries && entries.find(entry => entry.sortIndex < sortIndexValue);
 }
 
-function checkDateCondition(response, dateValue) {
-  let timeline = getBookmarkTimeline(response);
-  let entries = timeline?.timeline?.instructions?.[0]?.entries;
-  return entries && entries.find(entry => 
-    new Date(Number(BigInt(entry.sortIndex) >> BigInt(20))) < new Date(dateValue)
-  );
-}
+// 不要になったcheckDateCondition関数を削除
+// 日付フィルタリングはbackground_local.jsで個別に処理
 
 // ブックマークページでエクスポートボタンを追加
 if (document.location.href.includes("bookmarks")) {

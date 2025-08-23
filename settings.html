@@ -170,6 +170,18 @@
             </div>
         </div>
 
+        <div class="setting-group">
+            <h3>📁 ダウンロード設定</h3>
+            <div class="form-group">
+                <label for="download_folder">保存フォルダ名 (Downloads内のサブフォルダ):</label>
+                <input type="text" id="download_folder" class="custom-input" placeholder="Twitter-Bookmarks" maxlength="50">
+                <small style="color: #657786; font-size: 12px; display: block; margin-top: 5px;">
+                    例: "My-Bookmarks" → Downloads/My-Bookmarks/に保存<br>
+                    空欄の場合はDownloadsフォルダに直接保存
+                </small>
+            </div>
+        </div>
+
         <button class="save-btn" id="saveBtn">設定を保存</button>
         <div class="status-message" id="statusMessage"></div>
     </div>

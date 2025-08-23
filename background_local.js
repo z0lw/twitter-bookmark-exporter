@@ -32,9 +32,45 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
     // 制限チェック：設定された件数に到達していたら残りをカットする
     const settings = await chrome.storage.sync.get({
       countLimit: 'all',
-      customCount: 2000
+      customCount: 2000,
+      dateLimit: 'all',
+      customDate: getDefaultDate()
     });
     
+    // 日付フィルタリング: 古いツイートを個別に除外
+    if (settings.dateLimit !== 'all') {
+      let cutoffDate;
+      const now = new Date();
+      
+      switch (settings.dateLimit) {
+        case '1month':
+          cutoffDate = new Date(now.setMonth(now.getMonth() - 1));
+          break;
+        case '3month':
+          cutoffDate = new Date(now.setMonth(now.getMonth() - 3));
+          break;
+        case '6month':
+          cutoffDate = new Date(now.setMonth(now.getMonth() - 6));
+          break;
+        case '1year':
+          cutoffDate = new Date(now.setFullYear(now.getFullYear() - 1));
+          break;
+        case 'custom':
+          cutoffDate = new Date(settings.customDate);
+          break;
+      }
+      
+      if (cutoffDate) {
+        const originalCount = filteredEntries.length;
+        filteredEntries = filteredEntries.filter(entry => {
+          const entryDate = new Date(Number(BigInt(entry.sortIndex) >> BigInt(20)));
+          return entryDate >= cutoffDate;
+        });
+        console.log('📅 Date filtered from', originalCount, 'to', filteredEntries.length, 'entries (cutoff:', cutoffDate.toISOString(), ')');
+      }
+    }
+    
+    // 件数制限チェック
     if (settings.countLimit !== 'all') {
       const maxCount = settings.countLimit === 'custom' ? settings.customCount : parseInt(settings.countLimit);
       const currentCount = bookmarks.length;
@@ -171,38 +207,7 @@ const startDownload = async (event, stopSortIndex = null) => {
     console.log('📊 Count stop condition set:', stopCondition);
   }
   
-  if (settings.dateLimit !== 'all') {
-    let cutoffDate;
-    const now = new Date();
-    
-    switch (settings.dateLimit) {
-      case '1month':
-        cutoffDate = new Date(now.setMonth(now.getMonth() - 1));
-        break;
-      case '3month':
-        cutoffDate = new Date(now.setMonth(now.getMonth() - 3));
-        break;
-      case '6month':
-        cutoffDate = new Date(now.setMonth(now.getMonth() - 6));
-        break;
-      case '1year':
-        cutoffDate = new Date(now.setFullYear(now.getFullYear() - 1));
-        break;
-      case 'custom':
-        cutoffDate = new Date(settings.customDate);
-        break;
-    }
-    
-    if (cutoffDate) {
-      // 日付停止条件がある場合は、そちらを優先（または両方適用）
-      if (stopCondition) {
-        // 両方ある場合は、早く到達する方で停止
-        stopCondition = { type: 'both', count: stopCondition.value, date: cutoffDate.toISOString() };
-      } else {
-        stopCondition = { type: 'date', value: cutoffDate.toISOString() };
-      }
-    }
-  }
+  // 日付制限は個別フィルタリングで処理するため、停止条件からは削除
   
   console.log('📋 Applied stop condition:', stopCondition);
   
@@ -212,13 +217,17 @@ const startDownload = async (event, stopSortIndex = null) => {
   };
   
   if (isDownloading) {
-    chrome.tabs.sendMessage(currentTab.id, {action: "abortConfirm", script_ver: config.script_ver});
+    console.log('⚠️ Already downloading, sending abort confirmation');
+    if (currentTab) {
+      chrome.tabs.sendMessage(currentTab.id, {action: "abortConfirm", script_ver: config.script_ver});
+    }
     return;
   }
   
   if (Object.keys(credentials).length === 2 && bookmarksURL && currentTab) {
     isDownloading = true;
-    bookmarks = []; // ここでリセット
+    bookmarks = []; // 確実にリセット
+    console.log('🧹 Reset bookmarks array before download');
     console.log('✅ Sending iconClicked message to tab:', currentTab.id);
     chrome.tabs.sendMessage(currentTab.id, {
       action: "iconClicked",
@@ -227,6 +236,21 @@ const startDownload = async (event, stopSortIndex = null) => {
       stopCondition: stopCondition,
       otherConfig: config,
       script_ver: config.script_ver
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('❌ Message send error:', chrome.runtime.lastError.message);
+        console.log('🔄 Retrying message send in 2 seconds...');
+        setTimeout(() => {
+          chrome.tabs.sendMessage(currentTab.id, {
+            action: "iconClicked",
+            creds: credentials,
+            bookmarksURL: bookmarksURL,
+            stopCondition: stopCondition,
+            otherConfig: config,
+            script_ver: config.script_ver
+          });
+        }, 2000);
+      }
     });
   } else {
     chrome.tabs.create({url: "https://x.com/i/bookmarks"}, (tab) => {
@@ -234,7 +258,8 @@ const startDownload = async (event, stopSortIndex = null) => {
       let checkInterval = setInterval(() => {
         if (Object.keys(credentials).length === 2 && bookmarksURL) {
           isDownloading = true;
-          bookmarks = []; // ここでリセット
+          bookmarks = []; // 確実にリセット
+          console.log('🧹 Reset bookmarks array before download (new tab)');
           chrome.tabs.sendMessage(currentTab.id, {
             action: "iconClicked",
             creds: credentials,
@@ -271,11 +296,23 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
   ["requestHeaders"]
 );
 
-// ブックマークURLの取得
+// ブックマークURLの取得（カーソルを除去して最初から開始）
 chrome.webRequest.onBeforeRequest.addListener((details) => {
   if (details.url.includes("Bookmarks")) {
-    bookmarksURL = details.url;
-    console.log('🔗 Got bookmarks URL:', details.url.substring(0, 50) + '...');
+    // カーソルパラメータを除去して最初から開始するためのクリーンなURLを保存
+    let cleanURL = details.url;
+    try {
+      let urlObj = new URL(details.url);
+      let variables = JSON.parse(urlObj.searchParams.get('variables'));
+      delete variables.cursor; // カーソルを削除
+      urlObj.searchParams.set('variables', JSON.stringify(variables));
+      cleanURL = urlObj.toString();
+    } catch (e) {
+      console.log('Failed to clean URL, using original:', e);
+    }
+    
+    bookmarksURL = cleanURL;
+    console.log('🔗 Got clean bookmarks URL:', cleanURL.substring(0, 50) + '...');
   } else if (details.url.includes("BookmarkFoldersSlice") && currentTab) {
     // Premium user detection - select all bookmarks
     chrome.tabs.sendMessage(currentTab.id, {action: "selectAllBookmarks"});

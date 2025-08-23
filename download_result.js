@@ -113,16 +113,32 @@ function downloadFile(format) {
             return; // ZIP処理なので通常のダウンロードフローをスキップ
     }
     
-    // ダウンロード実行
+    // ダウンロード実行 (downloads API使用でユーザー設定フォルダに保存)
     const blob = new Blob([content], { type: mimeType + ';charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    
+    // 設定からフォルダ名を取得
+    chrome.storage.sync.get({downloadFolder: 'Twitter-Bookmarks'}, (settings) => {
+        const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/${filename}` : filename;
+        
+        chrome.downloads.download({
+            url: url,
+            filename: folderPath,
+            saveAs: false // trueにすると保存ダイアログが表示される
+        }, (downloadId) => {
+            if (chrome.runtime.lastError) {
+                console.error('Download error:', chrome.runtime.lastError);
+                // フォールバック: 従来の方法
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            URL.revokeObjectURL(url);
+        });
+    });
 }
 
 function convertToCSV(data) {
@@ -210,17 +226,39 @@ async function downloadMarkdownFiles(data) {
                 if (tweet && tweet.legacy) {
                     const markdown = convertToMarkdown(item);
                     const tweetId = tweet.rest_id || `tweet_${index + 1}`;
-                    const filename = `${String(index + 1).padStart(4, '0')}_${tweetId}.md`;
+                    
+                    // ユーザー名取得
+                    let username = 'unknown';
+                    if (tweet.core?.user_results?.result?.core?.screen_name) {
+                        username = tweet.core.user_results.result.core.screen_name;
+                    }
+                    
+                    const filename = `@${username}_${tweetId}.md`;
                     
                     const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
                     const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
+                    
+                    // 設定からフォルダ名を取得してMarkdownサブフォルダに保存
+                    chrome.storage.sync.get({downloadFolder: 'Twitter-Bookmarks'}, (settings) => {
+                        const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/markdown/${filename}` : `markdown/${filename}`;
+                        
+                        chrome.downloads.download({
+                            url: url,
+                            filename: folderPath,
+                            saveAs: false
+                        }, (downloadId) => {
+                            if (chrome.runtime.lastError) {
+                                // フォールバック: 従来の方法
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = filename;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                            }
+                            URL.revokeObjectURL(url);
+                        });
+                    });
                     
                     fileCount++;
                     
@@ -300,7 +338,16 @@ function convertToMarkdown(item) {
         });
     }
     
-    // Markdownテンプレート生成（正しいパス使用）
+    // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
+    let tweetText = legacy.full_text || '';
+    if (tweet.note_tweet?.is_expandable && tweet.note_tweet?.note_tweet_results?.result?.text) {
+        tweetText = tweet.note_tweet.note_tweet_results.result.text;
+    }
+    
+    // 本文をプロパティに追加（YAMLで特殊文字をエスケープ）
+    const escapedText = tweetText.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+    
+    // Markdownテンプレート生成（元の順番を維持）
     let markdown = `---\n`;
     markdown += `Date: ${createdAt}\n`;
     markdown += `twi_ProfileName: ${userCore.name || ''}\n`;
@@ -310,19 +357,14 @@ function convertToMarkdown(item) {
     markdown += `twi_BookmarkDate: ${bookmarkDate}\n`;
     markdown += `twi_source: ${sourceUrl}\n`;
     markdown += `twi_profile_icon_url: ${avatar.image_url || ''}\n`;
+    markdown += `twi_content: "${escapedText}"\n`;
     
     // メディアURL（最大4つ）
     for (let i = 0; i < 4; i++) {
         markdown += `twi_media_url_https${i + 1}: ${mediaUrls[i] || ''}\n`;
     }
     
-    markdown += `---\n\n`;
-    
-    // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
-    let tweetText = legacy.full_text || '';
-    if (tweet.note_tweet?.is_expandable && tweet.note_tweet?.note_tweet_results?.result?.text) {
-        tweetText = tweet.note_tweet.note_tweet_results.result.text;
-    }
+    markdown += `---\n`;
     
     markdown += `${tweetText}\n\n`;
     

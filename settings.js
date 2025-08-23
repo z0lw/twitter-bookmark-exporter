@@ -11,7 +11,8 @@ function loadSettings() {
         countLimit: 'all',
         customCount: 2000,
         dateLimit: 'all',
-        customDate: getDefaultDate()
+        customDate: getDefaultDate(),
+        downloadFolder: 'Twitter-Bookmarks'
     }, (settings) => {
         // 件数制限の復元
         document.querySelector(`input[name="count_limit"][value="${settings.countLimit}"]`).checked = true;
@@ -20,6 +21,9 @@ function loadSettings() {
         // 期間制限の復元
         document.querySelector(`input[name="date_limit"][value="${settings.dateLimit}"]`).checked = true;
         document.getElementById('custom_date').value = settings.customDate;
+        
+        // ダウンロードフォルダの復元
+        document.getElementById('download_folder').value = settings.downloadFolder;
         
         updateInputStates();
     });
@@ -54,6 +58,7 @@ function saveSettings() {
     const customCount = parseInt(document.getElementById('custom_count').value);
     const dateLimit = document.querySelector('input[name="date_limit"]:checked').value;
     const customDate = document.getElementById('custom_date').value;
+    const downloadFolder = document.getElementById('download_folder').value.trim();
     
     // バリデーション
     if (countLimit === 'custom' && (isNaN(customCount) || customCount < 1 || customCount > 10000)) {
@@ -66,12 +71,19 @@ function saveSettings() {
         return;
     }
     
+    // フォルダ名の検証（無効な文字をチェック）
+    if (downloadFolder && !/^[a-zA-Z0-9_\-\s\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]+$/.test(downloadFolder)) {
+        showStatus('フォルダ名に無効な文字が含まれています', 'error');
+        return;
+    }
+    
     // 設定を保存
     chrome.storage.sync.set({
         countLimit: countLimit,
         customCount: customCount,
         dateLimit: dateLimit,
-        customDate: customDate
+        customDate: customDate,
+        downloadFolder: downloadFolder || 'Twitter-Bookmarks'
     }, () => {
         showStatus('設定が保存されました！', 'success');
     });
