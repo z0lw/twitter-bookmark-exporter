@@ -1,0 +1,40 @@
+{
+  "appName": {
+    "message": "Twitterのブックマークエクスポート"
+  },
+  "appDesc": {
+    "message": "ツイッターブックマークを簡単にエクスポートする"
+  },
+  "appNameSearch": {
+    "message": "Twitter ブックマーク検索プロ"
+  },
+  "appDescSearch": {
+    "message": "すべてのTwitter / X.comのブックマークを簡単に検索できます。"
+  },
+  "downloadComplete": {
+    "message": "ダウンロード完了"
+  },
+  "paymentModalTitle": {
+    "message": "支払い保留中"
+  },
+  "paymentModalDesc": {
+    "message": "開いたタブの指示に従ってください。 <br />その他の支払いに関する質問がある場合は、<a target=\"_blank\" href=\"mailto:support@chirpnotes.freshdesk.com\">お問い合わせ</a>してください。"
+  },
+  "paymentModalBtn": {
+    "message": "支払い完了"
+  },
+  "paymentModalCancel": {
+    "message": "キャンセル"
+  },
+  "footer": {
+    "message": "サポートや機能リクエストに関しては、<a target=\"_blank\" href=\"mailto:support@chirpnotes.freshdesk.com\">サポートメール</a>までお問い合わせください。"
+  },
+  "previewDesc": {
+    "message": "最新の$previewLength$件のブックマークのプレビューがダウンロードできる準備ができました",
+    "placeholders": {
+      "previewLength": {
+        "content": "$1"
+      }
+    }
+  }
+}

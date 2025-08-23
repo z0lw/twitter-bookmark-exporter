@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(copy manifest.json manifest_original.json)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

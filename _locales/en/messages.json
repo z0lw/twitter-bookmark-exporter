@@ -1,0 +1,42 @@
+{
+  "appName": {
+    "message": "Export Twitter Bookmarks",
+    "description": "The description of the extension, displayed in the web store."
+  },
+  "appDesc": {
+    "message": "1-Click export for ALL your twitter bookmarks",
+    "description": "The description of the extension, displayed in the web store."
+  },
+  "appNameSearch": {
+    "message": "Twitter Bookmarks Search Pro"
+  },
+  "appDescSearch": {
+    "message": "Search ALL your twitter / X.com bookmarks with ease."
+  },
+  "downloadComplete": {
+    "message": "Download Complete"
+  },
+  "paymentModalTitle": {
+    "message": "Payment Pending"
+  },
+  "paymentModalDesc": {
+    "message": "Please follow the instructions in the opened tab. <br />If you have any other payment-related questions, please <a target=\"_blank\" href=\"mailto:support@chirpnotes.freshdesk.com\">contact us</a>."
+  },
+  "paymentModalBtn": {
+    "message": "Complete Payment"
+  },
+  "paymentModalCancel": {
+    "message": "Cancel"
+  },
+  "footer": {
+    "message": "For any support or feature request, please reach out to our <a target=\"_blank\" href=\"mailto:support@chirpnotes.freshdesk.com\">Support Email</a>."
+  },
+  "previewDesc": {
+    "message": "Preview of your recent $previewLength$ bookmarks is ready to be downloaded",
+    "placeholders": {
+      "previewLength": {
+        "content": "$1"
+      }
+    }
+  }
+}

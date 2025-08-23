@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitter Bookmarks Export - 設定</title>
+    <style>
+        body {
+            font-family: 'TwitterChirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #1da1f2 0%, #1a91da 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+        h1 {
+            color: #1da1f2;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        .setting-group {
+            margin-bottom: 25px;
+            padding: 20px;
+            border: 1px solid #e1e8ed;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .setting-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .setting-description {
+            color: #657786;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .radio-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .radio-item input[type="radio"] {
+            margin: 0;
+        }
+        .radio-item label {
+            color: #333;
+            cursor: pointer;
+        }
+        input[type="number"], input[type="date"] {
+            padding: 10px;
+            border: 1px solid #e1e8ed;
+            border-radius: 5px;
+            font-size: 14px;
+            width: 150px;
+        }
+        .save-btn {
+            background: #1da1f2;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: block;
+            margin: 30px auto 0;
+            transition: background 0.3s;
+        }
+        .save-btn:hover {
+            background: #1a91da;
+        }
+        .status-message {
+            text-align: center;
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .custom-input {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #e1e8ed;
+            border-radius: 5px;
+            background: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Twitter Bookmarks Export 設定</h1>
+        
+        <div class="setting-group">
+            <div class="setting-title">📊 取得件数制限</div>
+            <div class="setting-description">ダウンロードするブックマーク件数を制限できます</div>
+            <div class="radio-group">
+                <div class="radio-item">
+                    <input type="radio" id="count_all" name="count_limit" value="all" checked>
+                    <label for="count_all">全件取得（制限なし）</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="count_100" name="count_limit" value="100">
+                    <label for="count_100">最新100件</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="count_500" name="count_limit" value="500">
+                    <label for="count_500">最新500件</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="count_1000" name="count_limit" value="1000">
+                    <label for="count_1000">最新1000件</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="count_custom" name="count_limit" value="custom">
+                    <label for="count_custom">カスタム:</label>
+                    <input type="number" id="custom_count" min="1" max="10000" value="2000" disabled>
+                    <span>件</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="setting-group">
+            <div class="setting-title">📅 期間制限</div>
+            <div class="setting-description">指定した日付より古いブックマークは取得しません</div>
+            <div class="radio-group">
+                <div class="radio-item">
+                    <input type="radio" id="date_all" name="date_limit" value="all" checked>
+                    <label for="date_all">期間制限なし</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="date_1month" name="date_limit" value="1month">
+                    <label for="date_1month">過去1ヶ月</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="date_3month" name="date_limit" value="3month">
+                    <label for="date_3month">過去3ヶ月</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="date_6month" name="date_limit" value="6month">
+                    <label for="date_6month">過去6ヶ月</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="date_1year" name="date_limit" value="1year">
+                    <label for="date_1year">過去1年</label>
+                </div>
+                <div class="radio-item">
+                    <input type="radio" id="date_custom" name="date_limit" value="custom">
+                    <label for="date_custom">指定日以降:</label>
+                    <input type="date" id="custom_date" disabled>
+                </div>
+            </div>
+        </div>
+
+        <button class="save-btn" id="saveBtn">設定を保存</button>
+        <div class="status-message" id="statusMessage"></div>
+    </div>
+
+    <script src="settings.js"></script>
+</body>
+</html>
