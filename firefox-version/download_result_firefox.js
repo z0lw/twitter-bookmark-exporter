@@ -306,27 +306,49 @@ async function downloadMarkdownFiles(data) {
                     });
                     fileCount++;
                     console.log(`📝 Downloaded ${fileCount}/${data.length}: ${filename}`);
+                    
+                    // URLの解放を遅延（ダウンロードが完了するまで待つ）
+                    setTimeout(() => {
+                        URL.revokeObjectURL(url);
+                    }, 2000);
                 } catch (error) {
-                    console.error('❌ Download failed, using fallback:', error);
-                    // フォールバック
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    fileCount++;
-                    console.log(`📝 Downloaded via fallback ${fileCount}/${data.length}: ${filename}`);
+                    console.error('❌ Download failed:', error.message || error);
+                    
+                    // エラーの詳細を記録
+                    if (error.message && error.message.includes('canceled')) {
+                        console.error('⚠️ Download was canceled - URL may have been revoked too early');
+                    }
+                    
+                    // フォールバック: 新しいBlobを作成してリトライ
+                    try {
+                        const newBlob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
+                        const newUrl = URL.createObjectURL(newBlob);
+                        
+                        const link = document.createElement('a');
+                        link.href = newUrl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        
+                        // フォールバックのURLも遅延解放
+                        setTimeout(() => {
+                            URL.revokeObjectURL(newUrl);
+                        }, 2000);
+                        
+                        fileCount++;
+                        console.log(`📝 Downloaded via fallback ${fileCount}/${data.length}: ${filename}`);
+                    } catch (fallbackError) {
+                        console.error('❌ Fallback download also failed:', fallbackError);
+                        showStatusMessage(`⚠️ ダウンロード失敗: ${filename}`, 'warning');
+                    }
                 }
                 
-                // URLを即座に解放
-                URL.revokeObjectURL(url);
-                
-                // ブラウザが詰まらないよう待機（遅延を短縮）
-                if (index % 10 === 9) { // 10ファイルごとに少し休憩
-                    await delay(300);
+                // ブラウザが詰まらないよう待機（遅延を調整）
+                if (index % 5 === 4) { // 5ファイルごとに長めの休憩
+                    await delay(500);
                 } else {
-                    await delay(50);
+                    await delay(100); // 通常の待機時間を少し増やす
                 }
             }
         }
