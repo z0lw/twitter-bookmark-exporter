@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitter Bookmarks Export</title>
+    <style>
+        body {
+            width: 320px;
+            min-height: 400px;
+            margin: 0;
+            padding: 0;
+            font-family: 'TwitterChirp', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: #f8f9fa;
+            color: #333;
+        }
+        .container {
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: bold;
+            color: #1da1f2;
+        }
+        .header p {
+            margin: 5px 0 0;
+            font-size: 12px;
+            color: #657786;
+        }
+        .section {
+            margin-bottom: 20px;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #495057;
+        }
+        .options {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .option-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        .option-item:last-child {
+            margin-bottom: 0;
+        }
+        .option-item input[type="radio"] {
+            margin: 0;
+        }
+        .option-item label {
+            cursor: pointer;
+            flex: 1;
+            color: #495057;
+        }
+        .custom-input {
+            background: #fff;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            padding: 4px 8px;
+            color: #495057;
+            font-size: 12px;
+            width: 80px;
+            margin-left: 5px;
+        }
+        .custom-input:disabled {
+            background: #e9ecef;
+            opacity: 0.6;
+        }
+        .custom-input::placeholder {
+            color: #6c757d;
+        }
+        .start-button {
+            width: 100%;
+            background: #1da1f2;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 15px;
+            box-shadow: 0 2px 4px rgba(29, 161, 242, 0.2);
+        }
+        .start-button:hover {
+            background: #1a91da;
+            box-shadow: 0 4px 8px rgba(29, 161, 242, 0.3);
+        }
+        .start-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .settings-link {
+            display: block;
+            text-align: center;
+            color: #6c757d;
+            text-decoration: none;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+        .settings-link:hover {
+            color: #1da1f2;
+            text-decoration: underline;
+        }
+        .status {
+            text-align: center;
+            font-size: 12px;
+            margin-top: 10px;
+            padding: 8px;
+            border-radius: 5px;
+            display: none;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Twitter Bookmarks Export</h1>
+            <p>ローカル版 - 安全・高速・制限なし</p>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                📊 取得件数
+            </div>
+            <div class="options">
+                <div class="option-item">
+                    <input type="radio" id="count_all" name="count_limit" value="all" checked>
+                    <label for="count_all">全件取得</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="count_100" name="count_limit" value="100">
+                    <label for="count_100">最新100件</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="count_500" name="count_limit" value="500">
+                    <label for="count_500">最新500件</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="count_1000" name="count_limit" value="1000">
+                    <label for="count_1000">最新1000件</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="count_custom" name="count_limit" value="custom">
+                    <label for="count_custom">カスタム:</label>
+                    <input type="number" id="custom_count" class="custom-input" min="1" max="10000" value="2000" disabled placeholder="件数">
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                📅 期間制限
+            </div>
+            <div class="options">
+                <div class="option-item">
+                    <input type="radio" id="date_all" name="date_limit" value="all" checked>
+                    <label for="date_all">制限なし</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="date_last_export" name="date_limit" value="last_export">
+                    <label for="date_last_export">前回エクスポート以降</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="date_1month" name="date_limit" value="1month">
+                    <label for="date_1month">過去1ヶ月</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="date_6month" name="date_limit" value="6month">
+                    <label for="date_6month">過去6ヶ月</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="date_1year" name="date_limit" value="1year">
+                    <label for="date_1year">過去1年</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="date_3month" name="date_limit" value="3month">
+                    <label for="date_3month">過去3ヶ月</label>
+                </div>
+                <div class="option-item">
+                    <input type="radio" id="date_custom" name="date_limit" value="custom">
+                    <label for="date_custom">指定日以降:</label>
+                    <input type="date" id="custom_date" class="custom-input" disabled>
+                </div>
+            </div>
+            <div id="last_export_info" style="color: #6c757d; font-size: 11px; margin-top: 5px; display: none;">
+                前回: --
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-title">
+                📁 保存フォルダ
+            </div>
+            <div class="options">
+                <div class="option-item" style="flex-direction: column; align-items: stretch;">
+                    <label for="download_folder" style="margin-bottom: 5px; font-size: 12px;">Downloads内のサブフォルダ名:</label>
+                    <input type="text" id="download_folder" class="custom-input" placeholder="Twitter-Bookmarks" maxlength="50" style="width: 100%; margin-left: 0;">
+                    <small style="color: #6c757d; font-size: 10px; margin-top: 3px;">
+                        空欄の場合はDownloadsフォルダに直接保存
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <button class="start-button" id="startBtn">
+            📥 取得を開始
+        </button>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# Claude Code settings
+.claude/
+
+# Node modules
+node_modules/
+
+# Extension artifacts
+web-ext-artifacts/
+*.zip
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
