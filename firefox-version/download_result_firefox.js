@@ -11,67 +11,27 @@ window.addEventListener('load', () => {
         document.getElementById('bookmarkCount').textContent = `${count}件`;
     }
     
-    // Background scriptからデータを要求
-    if (typeof browser !== 'undefined' && browser.runtime) {
-        console.log('🔄 Requesting bookmarks from Firefox background...');
+    // 直接ストレージからデータを取得（Firefoxでは最も確実な方法）
+    if (typeof browser !== 'undefined' && browser.storage) {
+        console.log('🔄 Loading bookmarks from Firefox storage...');
         
-        // タイムアウト付きでリクエスト
-        const timeout = setTimeout(() => {
-            console.error('❌ Request timeout - trying direct storage access');
-            // フォールバック: 直接ストレージにアクセス
-            browser.storage.local.get(['bookmarks'], (result) => {
-                if (result.bookmarks) {
-                    try {
-                        bookmarksData = JSON.parse(result.bookmarks);
-                        document.getElementById('bookmarkCount').textContent = `${bookmarksData.length}件`;
-                        console.log('✅ Bookmarks loaded via direct storage:', bookmarksData.length);
-                    } catch (error) {
-                        console.error('❌ Error parsing stored bookmarks:', error);
-                    }
-                }
-            });
-        }, 5000);
-
-        browser.runtime.sendMessage({action: 'get_bookmarks'}, (response) => {
-            clearTimeout(timeout);
-            console.log('📥 Firefox background response:', response);
-            
-            if (browser.runtime.lastError) {
-                console.error('Firefox runtime error:', browser.runtime.lastError);
-                // フォールバック: 直接ストレージアクセス
-                browser.storage.local.get(['bookmarks'], (result) => {
-                    if (result.bookmarks) {
-                        try {
-                            bookmarksData = JSON.parse(result.bookmarks);
-                            document.getElementById('bookmarkCount').textContent = `${bookmarksData.length}件`;
-                            console.log('✅ Bookmarks loaded via fallback:', bookmarksData.length);
-                        } catch (error) {
-                            console.error('❌ Error parsing fallback bookmarks:', error);
-                        }
-                    }
-                });
-                return;
-            }
-            
-            if (response && response.bookmarks) {
+        browser.storage.local.get(['bookmarks']).then((result) => {
+            if (result.bookmarks) {
                 try {
-                    console.log('📄 Raw bookmarks data length:', response.bookmarks.length);
-                    bookmarksData = JSON.parse(response.bookmarks);
+                    bookmarksData = JSON.parse(result.bookmarks);
                     document.getElementById('bookmarkCount').textContent = `${bookmarksData.length}件`;
-                    console.log('✅ Bookmarks loaded successfully:', bookmarksData.length);
+                    console.log('✅ Bookmarks loaded from storage:', bookmarksData.length);
                 } catch (error) {
-                    console.error('❌ Error parsing bookmarks:', error);
-                    console.log('Raw data:', response.bookmarks.substring(0, 100));
+                    console.error('❌ Error parsing stored bookmarks:', error);
                 }
-            } else if (response && response.error) {
-                console.error('❌ Background error:', response.error);
             } else {
-                console.error('❌ No bookmarks data received from background');
-                console.log('Response was:', response);
+                console.error('❌ No bookmarks in storage');
             }
+        }).catch((error) => {
+            console.error('❌ Storage access error:', error);
         });
     } else {
-        console.error('Firefox runtime API not available');
+        console.error('Firefox storage API not available');
     }
 });
 
@@ -119,29 +79,19 @@ function downloadFile(format) {
     const blob = new Blob([content], { type: mimeType + ';charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     
-    // Firefoxでのダウンロード（downloadsAPI使用）
-    browser.storage.local.get({downloadFolder: 'Twitter-Bookmarks'}, (settings) => {
+    // 設定からフォルダ名を取得して自動保存
+    browser.storage.local.get({downloadFolder: 'Twitter-Bookmarks'}).then((settings) => {
         const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/${filename}` : filename;
         
-        if (browser.downloads) {
-            browser.downloads.download({
-                url: url,
-                filename: folderPath,
-                saveAs: false // trueにすると保存ダイアログが表示される
-            }, (downloadId) => {
-                if (browser.runtime.lastError) {
-                    console.error('Download error:', browser.runtime.lastError);
-                    // フォールバック: 従来の方法
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                }
-                URL.revokeObjectURL(url);
-            });
-        } else {
+        browser.downloads.download({
+            url: url,
+            filename: folderPath,
+            saveAs: false // falseで自動保存、ダイアログを表示しない
+        }).then((downloadId) => {
+            console.log('✅ Download started successfully:', downloadId, 'to', folderPath);
+            URL.revokeObjectURL(url);
+        }).catch((error) => {
+            console.error('❌ Download API failed:', error.message || error);
             // フォールバック: 従来の方法
             const link = document.createElement('a');
             link.href = url;
@@ -150,7 +100,7 @@ function downloadFile(format) {
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
-        }
+        });
     });
 }
 
@@ -342,60 +292,35 @@ async function downloadMarkdownFiles(data) {
                 
                 const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/markdown/${filename}` : `markdown/${filename}`;
                 
-                // Firefox用ダウンロード処理
+                // Firefox版 - 自動保存設定を適用
                 const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 
-                if (browser.downloads) {
-                    try {
-                        await new Promise((resolve, reject) => {
-                            browser.downloads.download({
-                                url: url,
-                                filename: folderPath,
-                                saveAs: false
-                            }, (downloadId) => {
-                                if (browser.runtime.lastError) {
-                                    console.warn(`Download API failed for ${filename}, using fallback:`, browser.runtime.lastError.message);
-                                    // フォールバック: 従来の方法
-                                    const link = document.createElement('a');
-                                    link.href = url;
-                                    link.download = filename;
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                }
-                                
-                                // URL解放を少し遅延させる
-                                setTimeout(() => {
-                                    URL.revokeObjectURL(url);
-                                }, 500);
-                                
-                                resolve();
-                            });
-                        });
-                    } catch (error) {
-                        // フォールバック処理
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.download = filename;
-                        document.body.appendChild(link);
-                        link.click();
-                        document.body.removeChild(link);
-                        URL.revokeObjectURL(url);
-                    }
-                } else {
-                    // ダウンロードAPIが利用できない場合のフォールバック
+                // folderPathは上で既に定義済み
+                
+                try {
+                    const downloadId = await browser.downloads.download({
+                        url: url,
+                        filename: folderPath,
+                        saveAs: false // falseで自動保存
+                    });
+                    fileCount++;
+                    console.log(`📝 Downloaded ${fileCount}/${data.length}: ${filename}`);
+                } catch (error) {
+                    console.error('❌ Download failed, using fallback:', error);
+                    // フォールバック
                     const link = document.createElement('a');
                     link.href = url;
                     link.download = filename;
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
+                    fileCount++;
+                    console.log(`📝 Downloaded via fallback ${fileCount}/${data.length}: ${filename}`);
                 }
                 
-                fileCount++;
-                console.log(`📝 Downloaded ${fileCount}/${data.length}: ${filename}`);
+                // URLを即座に解放
+                URL.revokeObjectURL(url);
                 
                 // ブラウザが詰まらないよう待機（遅延を短縮）
                 if (index % 10 === 9) { // 10ファイルごとに少し休憩
@@ -439,6 +364,16 @@ function convertToMarkdown(item) {
         userLegacy = userResult.legacy || {};
         userCore = userLegacy; // legacyをuserCoreとして使用
         avatar = userResult.avatar || {};
+        
+        // デバッグ: ユーザー情報の確認
+        if (!userCore.name || !userCore.screen_name) {
+            console.warn('⚠️ Missing user info:', {
+                name: userCore.name,
+                screen_name: userCore.screen_name,
+                userLegacy: userLegacy,
+                userResult: userResult
+            });
+        }
     }
     
     // 日付変換（日本時間で表示）
@@ -492,7 +427,7 @@ function convertToMarkdown(item) {
     markdown += `twi_TweetId: ${tweet.rest_id || ''}\n`;
     markdown += `twi_BookmarkDate: ${bookmarkDate}\n`;
     markdown += `twi_source: ${sourceUrl}\n`;
-    markdown += `twi_profile_icon_url: ${userLegacy.profile_image_url_https || ''}\n`;
+    markdown += `twi_profile_icon_url: ${userCore.profile_image_url_https || ''}\n`;
     markdown += `twi_content: "${escapedText}"\n`;
     markdown += `twi_possibly_sensitive: ${legacy.possibly_sensitive || false}\n`;
     markdown += `twi_possibly_sensitive_editable: ${legacy.possibly_sensitive_editable || false}\n`;

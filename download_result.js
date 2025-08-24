@@ -346,9 +346,12 @@ async function downloadMarkdownFiles(data) {
                 
                 const markdown = convertToMarkdown(item);
                 
-                // ユーザー名取得（legacyから取得）
+                // ユーザー名取得
                 let username = 'unknown';
-                if (tweet.core?.user_results?.result?.legacy?.screen_name) {
+                if (tweet.core?.user_results?.result?.core?.screen_name) {
+                    username = tweet.core.user_results.result.core.screen_name;
+                } else if (tweet.core?.user_results?.result?.legacy?.screen_name) {
+                    // フォールバック
                     username = tweet.core.user_results.result.legacy.screen_name;
                 }
                 

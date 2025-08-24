@@ -1,9 +1,7 @@
-// Firefox版 Twitter Bookmarks Export Content Script
+// ローカル版 Twitter Bookmarks Export Content Script
 // 全件出力対応、外部サービス通信を削除
 
-console.log('🔍 Firefox content script loaded on:', window.location.href);
-
-// Firefox専用 - browser APIのみを使用
+console.log('🔍 Content script loaded on:', window.location.href);
 
 function getBookmarkTimeline(response) {
   let timeline = response.data.bookmark_timeline_v2 ? "bookmark_timeline_v2" : "bookmark_collection_timeline";
@@ -16,7 +14,7 @@ function delay(ms) {
 
 browser.runtime.onMessage.addListener(async function(message, sender, sendResponse) {
   let overlay;
-  console.log('📧 Firefox content script received message:', message.action);
+  console.log('📧 Content script received message:', message.action);
   
   if (message.action === "iconClicked") {
     console.log('🎯 Processing iconClicked with bookmarksURL:', message.bookmarksURL);
@@ -30,214 +28,307 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
 
     // ローディングオーバーレイ作成
     overlay = document.createElement("div");
-    overlay.id = "bookmark-export-overlay";
-    overlay.innerHTML = `
-      <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; justify-content: center; align-items: center; font-family: 'TwitterChirp', sans-serif;">
-        <div style="background: white; padding: 40px; border-radius: 20px; text-align: center; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
-          <div style="font-size: 48px; margin-bottom: 20px;">📥</div>
-          <h2 style="color: #1da1f2; margin: 0 0 15px 0; font-size: 24px;">ブックマークをエクスポート中</h2>
-          <div id="export-progress" style="color: #657786; font-size: 16px; margin-bottom: 20px;">準備中...</div>
-          <div style="width: 100%; background: #f0f0f0; border-radius: 10px; overflow: hidden; margin-bottom: 20px;">
-            <div id="progress-bar" style="width: 0%; height: 8px; background: linear-gradient(90deg, #1da1f2, #1a91da); transition: width 0.3s ease;"></div>
-          </div>
-          <button onclick="document.getElementById('bookmark-export-overlay').remove(); browser.runtime.sendMessage({action: 'abort'});" style="background: #657786; color: white; border: none; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-size: 14px;">キャンセル</button>
-        </div>
-      </div>
+    overlay.style.position = "fixed";
+    overlay.style.top = "0";
+    overlay.style.left = "0";
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+    overlay.style.backgroundColor = "rgba(0, 0, 0, 0.75)";
+    overlay.style.zIndex = "9999";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+
+    let spinnerDiv = document.createElement("div");
+    spinnerDiv.innerHTML = `
+      <svg style="margin-right: 25px; scale: 0.75;" width="65px" height="65px" viewBox="0 0 66 66" xmlns="http://www.w3.org/2000/svg">
+        <g>
+          <animateTransform attributeName="transform" type="rotate" values="0 33 33;270 33 33" begin="0s" dur="1.4s" fill="freeze" repeatCount="indefinite"/>
+          <circle fill="none" stroke-width="6" stroke-linecap="round" cx="33" cy="33" r="30" stroke-dasharray="187" stroke-dashoffset="610">
+            <animate attributeName="stroke" values="#4285F4;#DE3E35;#F7C223;#1B9A59;#4285F4" begin="0s" dur="5.6s" fill="freeze" repeatCount="indefinite"/>
+            <animateTransform attributeName="transform" type="rotate" values="0 33 33;135 33 33;450 33 33" begin="0s" dur="1.4s" fill="freeze" repeatCount="indefinite"/>
+            <animate attributeName="stroke-dashoffset" values="187;46.75;187" begin="0s" dur="1.4s" fill="freeze" repeatCount="indefinite"/>
+          </circle>
+        </g>
+      </svg>
     `;
+    overlay.appendChild(spinnerDiv);
+
+    let statusText = document.createElement("h1");
+    statusText.textContent = "全件ダウンロード中... このタブを閉じないでください。";
+    statusText.style.color = "#fff";
+    statusText.style.fontFamily = '"TwitterChirp",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif';
+    overlay.appendChild(statusText);
+
+    // 安全にDOM追加を待つ
+    if (!document.body) {
+      await delay(500);
+    }
     document.body.appendChild(overlay);
 
-    // API呼び出し開始
-    let continueLoop = true;
-    while (continueLoop) {
-      try {
-        let currentURL = baseURL + "?" + queryParams;
-        if (cursor) {
-          // カーソルをURLに追加
-          let urlObj = new URL(currentURL);
-          let variables = JSON.parse(urlObj.searchParams.get('variables'));
-          variables.cursor = cursor;
-          urlObj.searchParams.set('variables', JSON.stringify(variables));
-          currentURL = urlObj.toString();
-        }
-
-        console.log('🌐 Making request:', currentURL);
-        
-        // プログレス更新
-        const progressElement = overlay.querySelector('#export-progress');
-        const progressBar = overlay.querySelector('#progress-bar');
-        if (progressElement) {
-          progressElement.textContent = `${totalCount}件のブックマークを処理中...`;
-        }
-
-        const response = await fetch(currentURL, {
-          method: 'GET',
-          headers: message.creds,
-          credentials: 'include'
-        });
-
-        if (!response.ok) {
-          console.error('❌ Fetch error:', response.status, response.statusText);
-          browser.runtime.sendMessage({action: "fetch_error", errors: [response.statusText]});
-          break;
-        }
-
-        const responseData = await response.json();
-        console.log('📦 Response received:', responseData);
-
-        // バックグラウンドにページデータを送信
-        browser.runtime.sendMessage({action: "fetch_page", page: responseData});
-
-        let timeline = getBookmarkTimeline(responseData);
-        if (!timeline || !timeline.timeline) {
-          console.log('⚠️ No timeline data found');
-          break;
-        }
-
-        let instructions = timeline.timeline.instructions;
-        if (!instructions || instructions.length === 0) {
-          console.log('⚠️ No instructions found');
-          break;
-        }
-
-        let entries = instructions[0].entries || [];
-        let bookmarkEntries = entries.filter(entry => !entry.entryId.startsWith("cursor-"));
-        totalCount += bookmarkEntries.length;
-
-        console.log('📊 This page entries:', entries.length, 'bookmarks:', bookmarkEntries.length, 'total:', totalCount);
-
-        // 次のカーソルを探す
-        let nextCursor = null;
-        for (let entry of entries) {
-          if (entry.entryId.startsWith("cursor-bottom-")) {
-            nextCursor = entry.content.value;
-            console.log('🔄 Found next cursor:', nextCursor);
-            break;
-          }
-        }
-
-        if (!nextCursor || nextCursor === cursor) {
-          console.log('✅ No more pages, finishing download');
-          continueLoop = false;
-        } else {
-          cursor = nextCursor;
-        }
-
-        // 停止条件チェック（カウント制限のみ）
-        if (stopCondition && stopCondition.type === 'count' && totalCount >= stopCondition.value) {
-          console.log(`📊 Reached count limit: ${totalCount} >= ${stopCondition.value}`);
-          continueLoop = false;
-        }
-
-        // 少し待機
-        await delay(config.wait_interval_ms || 50);
-
-      } catch (error) {
-        console.error('❌ Network error:', error);
-        browser.runtime.sendMessage({action: "fetch_network_error", error: error.message});
+    // メインループ：全件取得まで継続
+    window.forceStopDownload = false; // 初期化
+    while (true) {
+      // 強制停止チェック
+      if (window.forceStopDownload) {
+        console.log('🛑 Force stop detected, breaking loop. Reason:', window.stopReason);
         break;
       }
-    }
-
-    // オーバーレイを削除
-    if (overlay && overlay.parentNode) {
-      overlay.parentNode.removeChild(overlay);
-    }
-
-    console.log('✅ Download completed, total count:', totalCount);
-    browser.runtime.sendMessage({action: "finish_download"});
-  
-  } else if (message.action === "stop_download") {
-    console.log('⛔ Stop download requested:', message.reason);
-    // オーバーレイを削除
-    const existingOverlay = document.getElementById("bookmark-export-overlay");
-    if (existingOverlay) {
-      existingOverlay.remove();
-    }
-  
-  } else if (message.action === "abortConfirm") {
-    console.log('🔄 Abort confirmation received');
-    // オーバーレイを削除
-    const existingOverlay = document.getElementById("bookmark-export-overlay");
-    if (existingOverlay) {
-      existingOverlay.remove();
-    }
-  
-  } else if (message.action === "selectAllBookmarks") {
-    console.log('📋 Selecting all bookmarks for Premium user');
-    // Premium userの場合、全ブックマークを選択
-    setTimeout(() => {
-      const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-      checkboxes.forEach(checkbox => {
-        if (!checkbox.checked) {
-          checkbox.click();
-        }
-      });
-    }, 1000);
-  }
-
-  return true;
-});
-
-// 開始ボタンを挿入
-function injectStartButton() {
-  if (window.location.href.includes('/i/bookmarks')) {
-    console.log('📍 On bookmarks page, injecting start button');
-    
-    setTimeout(() => {
-      // 既存のボタンをチェック
-      if (document.getElementById('bookmark-export-btn-firefox')) {
-        return;
+      
+      let response;
+      console.log('🔄 Fetching page with cursor:', cursor ? cursor.substring(0, 20) + '...' : 'null');
+      try {
+        response = await fetchBookmarkPage(cursor, message.creds, baseURL, parseQueryParams(queryParams));
+      } catch (error) {
+        browser.runtime.sendMessage({action: "fetch_network_error", error: error.toString()});
+        await delay(2000);
+        continue;
       }
 
-      const button = document.createElement('button');
-      button.id = 'bookmark-export-btn-firefox';
-      button.innerHTML = '🚀 Firefox版エクスポート';
-      button.style.cssText = `
-        position: fixed;
-        top: 80px;
-        left: 20px;
-        z-index: 9999;
-        background: linear-gradient(135deg, #1da1f2, #1a91da);
-        color: white;
-        border: none;
-        padding: 15px 25px;
-        border-radius: 25px;
-        font-size: 16px;
-        font-weight: bold;
-        cursor: pointer;
-        box-shadow: 0 4px 15px rgba(29, 161, 242, 0.3);
-        transition: all 0.3s ease;
-      `;
-      
-      button.onmouseover = () => {
-        button.style.transform = 'translateY(-2px)';
-        button.style.boxShadow = '0 6px 20px rgba(29, 161, 242, 0.4)';
-      };
-      
-      button.onmouseout = () => {
-        button.style.transform = 'translateY(0)';
-        button.style.boxShadow = '0 4px 15px rgba(29, 161, 242, 0.3)';
-      };
+      let hasData = false;
+      if (response?.data) {
+        let timeline = getBookmarkTimeline(response);
+        hasData = timeline?.timeline?.instructions?.[0]?.entries?.length > 0;
+      }
 
-      button.onclick = () => {
-        browser.runtime.sendMessage({action: "start_download"});
-      };
+      let hasErrors = false;
+      if (response.errors && response.errors.length > 0) {
+        hasErrors = true;
+      }
 
-      document.body.appendChild(button);
-    }, 2000);
+      // エラー処理
+      if (hasErrors && hasData) {
+        browser.runtime.sendMessage({action: "partial_fetch_error", payload: response});
+      }
+      
+      if (hasErrors && !hasData) {
+        browser.runtime.sendMessage({action: "fetch_error", errors: response.errors});
+        if (!confirm("Twitter側でエラーが発生しています。現在取得済みのブックマークを保持しますか？\n（キャンセルすると中止）")) {
+          browser.runtime.sendMessage({action: "abort"});
+          setTimeout(() => {
+            if (overlay && overlay.parentNode) {
+              document.body.removeChild(overlay);
+            }
+          }, 1000);
+          return;
+        } else {
+          browser.runtime.sendMessage({action: "finish_download"});
+        }
+        await delay(5000);
+      }
+
+      // カウント更新（カーソルエントリを除いた実際のブックマーク数）
+      try {
+        let entries = response.data.bookmark_timeline_v2.timeline.instructions[0].entries;
+        let bookmarkEntries = entries.filter(entry => !entry.entryId.startsWith("cursor-"));
+        totalCount += bookmarkEntries.length;
+        statusText.textContent = `全件ダウンロード中... ${totalCount}件取得済み`;
+        console.log('📊 Updated count:', totalCount, 'from', bookmarkEntries.length, 'new bookmarks');
+      } catch (e) {
+        console.error('Count update error:', e);
+      }
+
+      // カーソル取得
+      cursor = getBookmarkTimeline(response).timeline.instructions[0].entries.find(entry => 
+        entry.entryId.startsWith("cursor-bottom-")
+      ).content.value;
+
+      // ページデータ送信
+      console.log('📤 Sending page data to background, entries count:', getBookmarkTimeline(response).timeline.instructions[0].entries.length);
+      browser.runtime.sendMessage({action: "fetch_page", page: response});
+
+      // 終了条件チェック：エントリが2つのみ（カーソルのみ）の場合は最後のページ
+      if (getBookmarkTimeline(response).timeline.instructions[0].entries.length === 2) {
+        break;
+      }
+
+      // 停止条件チェック（件数制限のみ、日付は個別フィルタリングで処理）
+      if (stopCondition && stopCondition.type === "count") {
+        console.log('📊 Checking count limit:', totalCount, 'vs', stopCondition.value);
+        if (totalCount >= stopCondition.value) {
+          console.log('📊 Reached count limit:', totalCount, '>=', stopCondition.value);
+          break;
+        }
+      }
+      // 停止条件がない場合は、エントリが2つ（カーソルのみ）になるまで継続
+
+      // 待機時間（最速設定）
+      let waitTime = Math.max(50, Math.min(config.wait_interval_ms || 100, 10000));
+      await delay(waitTime);
+    }
+
+    browser.runtime.sendMessage({action: "finish_download"});
+    setTimeout(() => {
+      if (overlay && overlay.parentNode) {
+        document.body.removeChild(overlay);
+      }
+    }, 1000);
+
+  } else if (message.action === "abortConfirm") {
+    if (confirm("現在のダウンロード処理を停止しますか？")) {
+      browser.runtime.sendMessage({action: "abort"});
+      window.forceStopDownload = true;
+      setTimeout(() => {
+        if (overlay && overlay.parentNode) {
+          document.body.removeChild(overlay);
+        }
+      }, 1000);
+    } else {
+      // キャンセルした場合は何もしない（ダウンロード継続）
+      console.log('ℹ️ User cancelled abort, continuing download');
+    }
+  } else if (message.action === "selectAllBookmarks") {
+    document.querySelector('a[href="/i/bookmarks/all"]').click();
+  } else if (message.action === "stop_download") {
+    console.log('🛑 Received stop signal from background:', message.reason);
+    // グローバル変数でダウンロード停止フラグを設定
+    window.forceStopDownload = true;
+    window.stopReason = message.reason;
   }
+});
+
+// ヘルパー関数
+async function fetchBookmarkPage(cursor, credentials, baseURL, params) {
+  let variables = JSON.parse(decodeURIComponent(params.variables));
+  let features = params.features;
+  
+  if (cursor) {
+    variables.cursor = cursor;
+  }
+  
+  // countを大きくして一度により多くのデータを取得
+  variables.count = 200; // デフォルトの20から200に増加
+  console.log('🔧 Modified variables:', variables);
+  
+  return fetch(`${baseURL}?variables=${encodeURIComponent(JSON.stringify(variables))}&features=${features}`, {
+    headers: {
+      "accept": "*/*",
+      "accept-language": "en-US,en;q=0.9,zh-TW;q=0.8,zh;q=0.7",
+      "authorization": credentials.authorization,
+      "cache-control": "no-cache",
+      "content-type": "application/json",
+      "pragma": "no-cache",
+      "sec-ch-ua": '"Chromium";v="112", "Google Chrome";v="112", "Not:A-Brand";v="99"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"',
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-site": "same-origin",
+      "sec-gpc": "1",
+      "x-csrf-token": credentials["x-csrf-token"],
+      "x-twitter-active-user": "yes",
+      "x-twitter-auth-type": "OAuth2Session",
+      "x-twitter-client-language": "zh-tw"
+    },
+    referrer: "https://x.com/i/bookmarks",
+    referrerPolicy: "strict-origin-when-cross-origin",
+    body: null,
+    method: "GET",
+    mode: "cors",
+    credentials: "include"
+  }).then(response => response.json());
 }
 
-// ページ変更を監視
-let lastURL = location.href;
-new MutationObserver(() => {
-  const url = location.href;
-  if (url !== lastURL) {
-    lastURL = url;
-    console.log('🔄 URL changed:', url);
-    injectStartButton();
+function parseQueryParams(queryString) {
+  let params = {};
+  if (queryString) {
+    queryString.split("&").forEach(function(param) {
+      let parts = param.split("=");
+      let key = decodeURIComponent(parts[0]);
+      let value = parts[1] || "";
+      if (params[key]) {
+        if (Array.isArray(params[key])) {
+          params[key].push(value);
+        } else {
+          params[key] = [params[key], value];
+        }
+      } else {
+        params[key] = value;
+      }
+    });
   }
-}).observe(document, {subtree: true, childList: true});
+  return params;
+}
 
-// 初期ロード
-injectStartButton();
+function checkSortIndexCondition(response, sortIndexValue) {
+  let timeline = getBookmarkTimeline(response);
+  let entries = timeline?.timeline?.instructions?.[0]?.entries;
+  return entries && entries.find(entry => entry.sortIndex < sortIndexValue);
+}
+
+// 不要になったcheckDateCondition関数を削除
+// 日付フィルタリングはbackground_local.jsで個別に処理
+
+// ブックマークページでエクスポートボタンを追加
+if (document.location.href.includes("bookmarks")) {
+  function addExportButton(selector, callback) {
+    new MutationObserver((mutations, observer) => {
+      let element = document.querySelector(selector);
+      if (element) {
+        callback(element);
+        observer.disconnect();
+      }
+    }).observe(document.documentElement, {childList: true, subtree: true});
+  }
+
+  addExportButton('div[data-testid="primaryColumn"] div[aria-haspopup="menu"]', (targetElement) => {
+    // 全件出力ボタン
+    let exportAllButton = document.createElement("div");
+    exportAllButton.title = "🚀 全件エクスポート（制限なし）";
+    exportAllButton.innerHTML = `
+      <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13 11L21.2 2.80005" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M22 6.8V2H17.2" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M11 2H9C4 2 2 4 2 9V15C2 20 4 22 9 22H15C20 22 22 20 22 15V13" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `;
+    exportAllButton.addEventListener("click", () => {
+      console.log('🚀 Clicked: Download ALL bookmarks');
+      console.log('🌍 Current URL:', window.location.href);
+      browser.runtime.sendMessage({action: "download_all"}, (response) => {
+        console.log('📨 Background response:', response);
+      });
+    });
+    exportAllButton.style.position = "absolute";
+    exportAllButton.style.width = "50px";
+    exportAllButton.style.height = "50px";
+    exportAllButton.style.right = "90px"; // 元のボタンより左に配置
+    exportAllButton.style.display = "flex";
+    exportAllButton.style.justifyContent = "center";
+    exportAllButton.style.alignItems = "center";
+    exportAllButton.style.cursor = "pointer";
+    exportAllButton.style.backgroundColor = "#1d9bf0"; // 青色背景
+    exportAllButton.style.borderRadius = "50%";
+    exportAllButton.style.border = "2px solid #1a91da";
+    exportAllButton.style.boxShadow = "0 2px 8px rgba(29, 155, 240, 0.3)";
+    
+    // 通常のエクスポートボタン
+    let exportButton = document.createElement("div");
+    exportButton.title = "エクスポート（標準）";
+    exportButton.innerHTML = `
+      <svg width="20px" height="20px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M13 11L21.2 2.80005" stroke="#292D32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M22 6.8V2H17.2" stroke="#292D32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M11 2H9C4 2 2 4 2 9V15C2 20 4 22 9 22H15C20 22 22 20 22 15V13" stroke="#292D32" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `;
+    exportButton.addEventListener("click", () => {
+      console.log('Clicked: Download bookmarks (standard)');
+      browser.runtime.sendMessage({action: "start_download"});
+    });
+    exportButton.style.position = "absolute";
+    exportButton.style.width = "50px";
+    exportButton.style.height = "50px";
+    exportButton.style.right = "33px";
+    exportButton.style.display = "flex";
+    exportButton.style.justifyContent = "center";
+    exportButton.style.alignItems = "center";
+    exportButton.style.cursor = "pointer";
+    exportButton.style.backgroundColor = "rgba(29, 155, 240, 0.1)";
+    exportButton.style.borderRadius = "50%";
+    exportButton.style.border = "2px solid #1d9bf0";
+    
+    targetElement.parentNode.insertBefore(exportAllButton, targetElement);
+    targetElement.parentNode.insertBefore(exportButton, targetElement);
+  });
+}

@@ -125,8 +125,10 @@ function startDownload() {
         return browser.runtime.sendMessage({action: "popup_download_all"});
     }).then((response) => {
         console.log('✅ Message sent, response:', response);
-        // ポップアップを閉じる
-        window.close();
+        // ポップアップを閉じる（処理が安定するまで待つ）
+        setTimeout(() => {
+            window.close();
+        }, 3000);
     }).catch((error) => {
         console.error('❌ Error:', error);
         showStatus('エラーが発生しました: ' + error.message, 'error');

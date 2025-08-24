@@ -6,7 +6,10 @@
       "Read(/C:\\Users\\3122.2-1\\Downloads/**)",
       "Read(/C:\\Users\\3122.2-1\\Downloads/**)",
       "Read(/C:\\Users\\3122.2-1\\Downloads/**)",
-      "Read(/C:\\Users\\3122.2-1\\Downloads/**)"
+      "Read(/C:\\Users\\3122.2-1\\Downloads/**)",
+      "Bash(copy background_firefox.js background_firefox_old.js)",
+      "Bash(copy background_firefox_fixed.js background_firefox.js)",
+      "mcp__gpt-5-mini-search__gpt-5-mini-search"
     ],
     "deny": [],
     "ask": []
