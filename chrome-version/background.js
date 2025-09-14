@@ -329,7 +329,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
     return {requestHeaders: details.requestHeaders};
   },
   {urls: ["*://x.com/*"]},
-  ["requestHeaders"]
+  ["requestHeaders", "extraHeaders"]
 );
 
 // ブックマークURLの取得（カーソルを除去して最初から開始）

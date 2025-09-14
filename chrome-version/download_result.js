@@ -435,6 +435,11 @@ function convertToMarkdown(item) {
     let userCore = {};
     let userLegacy = {};
     let avatar = {};
+    // プロフィール関連の初期値（user情報が無いケースに備える）
+    var escapedProfile = '';
+    var profileBannerUrl = '';
+    var profileLocation = '';
+    var profileUrl = '';
     
     if (tweet.core?.user_results?.result) {
         const userResult = tweet.core.user_results.result;
@@ -442,6 +447,18 @@ function convertToMarkdown(item) {
         userCore = userResult.core || {};
         userLegacy = userResult.legacy || {};
         avatar = userResult.avatar || {};
+        // プロフィール関連（説明文・バナーURL）
+        const profileDesc = (userLegacy.description || '');
+        escapedProfile = profileDesc.replace(/\"/g, '\\"').replace(/\n/g, '\\n');
+        profileBannerUrl = userLegacy.profile_banner_url || '';
+        profileLocation = userLegacy.location || '';
+        try {
+            if (userLegacy.entities && userLegacy.entities.url && Array.isArray(userLegacy.entities.url.urls) && userLegacy.entities.url.urls.length > 0) {
+                profileUrl = userLegacy.entities.url.urls[0].expanded_url || userLegacy.entities.url.urls[0].url || '';
+            }
+        } catch (e) {
+            profileUrl = '';
+        }
     }
     
     // デバッグ用ログ（最初のアイテムのみ）
@@ -509,25 +526,21 @@ function convertToMarkdown(item) {
     markdown += `twi_BookmarkDate: ${bookmarkDate}\n`;
     markdown += `twi_source: ${sourceUrl}\n`;
     markdown += `twi_profile_icon_url: ${avatar.image_url || ''}\n`;
+    markdown += `twi_profile_banner_url: ${profileBannerUrl}\n`;
+    markdown += `twi_profile: "${escapedProfile}"\n`;
+    markdown += `twi_profile_url: ${profileUrl}\n`;
+    markdown += `twi_profile_location: ${profileLocation}\n`;
     markdown += `twi_content: "${escapedText}"\n`;
-    markdown += `twi_possibly_sensitive: ${legacy.possibly_sensitive || false}\n`;
-    markdown += `twi_possibly_sensitive_editable: ${legacy.possibly_sensitive_editable || false}\n`;
     
-    // sensitive_media_warning情報を追加
-    if (legacy.sensitive_media_warning) {
-        markdown += `twi_sensitive_media_adult_content: ${legacy.sensitive_media_warning.adult_content || false}\n`;
-        markdown += `twi_sensitive_media_graphic_violence: ${legacy.sensitive_media_warning.graphic_violence || false}\n`;
-        markdown += `twi_sensitive_media_other: ${legacy.sensitive_media_warning.other || false}\n`;
-    } else {
-        markdown += `twi_sensitive_media_adult_content: false\n`;
-        markdown += `twi_sensitive_media_graphic_violence: false\n`;
-        markdown += `twi_sensitive_media_other: false\n`;
-    }
+    
+    // センシティブ系5項目は出力しない（要望により削除）
     
     // メディアURL（最大4つ）
     for (let i = 0; i < 4; i++) {
         markdown += `twi_media_url_https${i + 1}: ${mediaUrls[i] || ''}\n`;
     }
+    // 手動判定用フラグ（初期は空文字）。必ずフロントマターの最後の行
+    markdown += `twi_isSensitiveMedia:\n`;
     
     markdown += `---\n`;
     
@@ -559,4 +572,3 @@ function showStatusMessage(message, type = 'info') {
         }
     }
 }
-

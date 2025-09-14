@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twitter Bookmarks Export - Local",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "ローカル版：Twitterブックマークをエクスポート",
   "permissions": [
     "webRequest",
@@ -10,7 +10,7 @@
     "downloads"
   ],
   "background": {
-    "service_worker": "background_local.js"
+    "service_worker": "background.js"
   },
   "host_permissions": [
     "https://twitter.com/*",
@@ -34,7 +34,7 @@
   ],
   "content_scripts": [
     {
-      "js": ["content_local.js"],
+      "js": ["content.js"],
       "run_at": "document_start",
       "matches": ["https://twitter.com/*", "https://x.com/*"],
       "css": []
