@@ -250,6 +250,15 @@ async function downloadMarkdownFiles(data) {
     const processedTweetIds = new Set(); // 処理済みツイートIDを追跡
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+    // 補助: ファイル名用のscreen_name抽出（多様なレスポンスに対応）
+    function getScreenNameForFilename(tw) {
+        if (!tw) return 'unknown';
+        let t = (tw.__typename === 'TweetWithVisibilityResults' && tw.tweet) ? tw.tweet : tw;
+        const ur = t.core?.user_results?.result;
+        const sn = ur?.legacy?.screen_name || ur?.core?.screen_name;
+        return (sn && typeof sn === 'string' && sn.length > 0) ? sn : 'unknown';
+    }
+
     // 個別ファイルを連続ダウンロード
     for (let index = 0; index < data.length; index++) {
         const item = data[index];
@@ -273,11 +282,8 @@ async function downloadMarkdownFiles(data) {
                 
                 const markdown = convertToMarkdown(item);
                 
-                // ユーザー名取得（Firefox版ではlegacyから取得）
-                let username = 'unknown';
-                if (tweet.core?.user_results?.result?.legacy?.screen_name) {
-                    username = tweet.core.user_results.result.legacy.screen_name;
-                }
+                // ユーザー名取得（堅牢化）
+                let username = getScreenNameForFilename(tweet);
                 
                 // 一意のファイル名を生成（重複を防ぐ）
                 let baseFilename = `@${username}_${tweetId}`;
