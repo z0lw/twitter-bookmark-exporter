@@ -522,8 +522,10 @@ function convertToMarkdown(item) {
     // 本文をプロパティに追加（YAMLで特殊文字をエスケープ）
     const escapedText = tweetText.replace(/"/g, '\\"').replace(/\n/g, '\\n');
     
-    // Markdownテンプレート生成（元の順番を維持）
+    // Markdownテンプレート生成
     let markdown = `---\n`;
+    // 手動判定用フラグ（初期は空文字）。フロントマターの最初の行
+    markdown += `twi_isSensitiveMedia:\n`;
     markdown += `Date: ${createdAt}\n`;
     markdown += `twi_ProfileName: ${userCore.name || ''}\n`;
     markdown += `twi_ScreenName: ${userCore.screen_name || ''}\n`;
@@ -537,16 +539,14 @@ function convertToMarkdown(item) {
     markdown += `twi_profile_url: ${profileUrl}\n`;
     markdown += `twi_profile_location: ${profileLocation}\n`;
     markdown += `twi_content: "${escapedText}"\n`;
-    
-    
+
+
     // センシティブ系5項目は出力しない（要望により削除）
-    
+
     // メディアURL（最大4つ）
     for (let i = 0; i < 4; i++) {
         markdown += `twi_media_url_https${i + 1}: ${mediaUrls[i] || ''}\n`;
     }
-    // 手動判定用フラグ（初期は空文字）。必ずフロントマターの最後の行
-    markdown += `twi_isSensitiveMedia:\n`;
     
     markdown += `---\n`;
     
