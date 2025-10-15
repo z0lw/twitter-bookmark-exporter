@@ -195,10 +195,11 @@ function convertToCSV(data) {
             const tweet = item.content.itemContent.tweet_results.result;
             if (tweet && tweet.legacy) {
                 const legacy = tweet.legacy;
-                let userCore = {};
-                if (tweet.core?.user_results?.result?.core) {
-                    userCore = tweet.core.user_results.result.core;
-                }
+                const userResult = tweet.core?.user_results?.result || {};
+                const userCore = userResult.core || {};
+                const userLegacy = userResult.legacy || {};
+                const resolvedName = (userCore.name || userLegacy.name || '').replace(/"/g, '""');
+                const resolvedScreenName = userCore.screen_name || userLegacy.screen_name || '';
                 
                 // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
                 let tweetText = legacy.full_text || '';
@@ -208,12 +209,12 @@ function convertToCSV(data) {
                 
                 const row = [
                     `"${new Date(legacy.created_at).toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})}"`,
-                    `"${(userCore.name || '').replace(/"/g, '""')}"`,
-                    `"${userCore.screen_name || ''}"`,
+                    `"${resolvedName}"`,
+                    `"${resolvedScreenName}"`,
                     `"${tweetText.replace(/"/g, '""').replace(/\n/g, ' ')}"`,
                     legacy.favorite_count || 0,
                     legacy.retweet_count || 0,
-                    `"https://x.com/${userCore.screen_name}/status/${legacy.id_str}"`
+                    `"https://x.com/${resolvedScreenName || 'i'}/status/${legacy.id_str}"`
                 ];
                 rows.push(row.join(','));
             }
@@ -234,10 +235,11 @@ function convertToText(data) {
             const tweet = item.content.itemContent.tweet_results.result;
             if (tweet && tweet.legacy) {
                 const legacy = tweet.legacy;
-                let userCore = {};
-                if (tweet.core?.user_results?.result?.core) {
-                    userCore = tweet.core.user_results.result.core;
-                }
+                const userResult = tweet.core?.user_results?.result || {};
+                const userCore = userResult.core || {};
+                const userLegacy = userResult.legacy || {};
+                const resolvedName = userCore.name || userLegacy.name || '';
+                const resolvedScreenName = userCore.screen_name || userLegacy.screen_name || '';
                 
                 // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
                 let tweetText = legacy.full_text || '';
@@ -245,11 +247,11 @@ function convertToText(data) {
                     tweetText = tweet.note_tweet.note_tweet_results.result.text;
                 }
                 
-                text += `${index + 1}. ${userCore.name || ''} (@${userCore.screen_name || ''})\n`;
+                text += `${index + 1}. ${resolvedName} (@${resolvedScreenName})\n`;
                 text += `日時: ${new Date(legacy.created_at).toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})}\n`;
                 text += `内容: ${tweetText}\n`;
                 text += `いいね: ${legacy.favorite_count} | RT: ${legacy.retweet_count}\n`;
-                text += `URL: https://x.com/${userCore.screen_name}/status/${legacy.id_str}\n`;
+                text += `URL: https://x.com/${resolvedScreenName || 'i'}/status/${legacy.id_str}\n`;
                 text += `-`.repeat(30) + '\n\n';
             }
         }
@@ -553,8 +555,11 @@ function convertToMarkdown(item) {
         second: '2-digit'
     });
     
+    const resolvedProfileName = userCore.name || userLegacy.name || '';
+    const resolvedScreenName = userCore.screen_name || userLegacy.screen_name || '';
+    
     // ソースURL生成
-    const sourceUrl = `https://x.com/${userCore.screen_name}/status/${tweet.rest_id}`;
+    const sourceUrl = resolvedScreenName ? `https://x.com/${resolvedScreenName}/status/${tweet.rest_id}` : `https://x.com/i/status/${tweet.rest_id}`;
     
     // メディアURL取得
     const mediaUrls = [];
@@ -580,8 +585,8 @@ function convertToMarkdown(item) {
     // 手動判定用フラグ（初期は空文字）。フロントマターの最初の行
     markdown += `twi_isSensitiveMedia:\n`;
     markdown += `Date: ${createdAt}\n`;
-    markdown += `twi_ProfileName: ${userCore.name || ''}\n`;
-    markdown += `twi_ScreenName: ${userCore.screen_name || ''}\n`;
+    markdown += `twi_ProfileName: ${resolvedProfileName}\n`;
+    markdown += `twi_ScreenName: ${resolvedScreenName}\n`;
     markdown += `twi_UserId: ${user.rest_id || ''}\n`;
     markdown += `twi_TweetId: ${tweet.rest_id || ''}\n`;
     markdown += `twi_BookmarkDate: ${bookmarkDate}\n`;

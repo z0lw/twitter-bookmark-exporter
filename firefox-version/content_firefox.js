@@ -12,10 +12,18 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const sanitize = (value) => String(value).replace(/[^a-zA-Z0-9_\-]/g, '');
+
+function getAccountFingerprint(info) {
+  if (!info) return 'null';
+  return `${info.userId || ''}|${info.screenName || ''}`;
+}
+
+let lastSentAccountFingerprint = null;
+
 function extractAccountInfo() {
   const info = {};
   let hasInfo = false;
-  const sanitize = (value) => String(value).replace(/[^a-zA-Z0-9_\-]/g, '');
 
   try {
     const metaId = document.querySelector('meta[name="session-user-id"]');
@@ -107,17 +115,24 @@ function extractAccountInfo() {
   return info;
 }
 
+function sendAccountInfo(force = false) {
+  const info = extractAccountInfo();
+  const fingerprint = getAccountFingerprint(info);
+  if (!force && fingerprint === lastSentAccountFingerprint) {
+    return;
+  }
+  lastSentAccountFingerprint = fingerprint;
+  browser.runtime.sendMessage({action: "set_account_info", accountInfo: info || null});
+}
+
+sendAccountInfo(true);
+
 browser.runtime.onMessage.addListener(async function(message, sender, sendResponse) {
   let overlay;
   console.log('📧 Content script received message:', message.action);
   
   if (message.action === "iconClicked") {
-    const accountInfo = extractAccountInfo();
-    if (accountInfo) {
-      browser.runtime.sendMessage({action: "set_account_info", accountInfo});
-    } else {
-      browser.runtime.sendMessage({action: "set_account_info", accountInfo: null});
-    }
+    sendAccountInfo(true);
     console.log('🎯 Processing iconClicked with bookmarksURL:', message.bookmarksURL);
     let baseURL = message.bookmarksURL.split("?")[0];
     let queryParams = message.bookmarksURL.split("?")[1];

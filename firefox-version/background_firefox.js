@@ -19,6 +19,57 @@ function getBookmarkTimeline(response) {
   return response.data.bookmark_timeline_v2 || response.data.bookmark_collection_timeline;
 }
 
+function computeAccountKey(info) {
+  if (!info) return null;
+  if (info.userId) {
+    return `id:${info.userId}`;
+  }
+  if (info.screenName) {
+    return `sn:${info.screenName.toLowerCase()}`;
+  }
+  return null;
+}
+
+function getAccountKey(info = currentAccountInfo) {
+  if (!info) return null;
+  if (info.accountKey) {
+    return info.accountKey;
+  }
+  const key = computeAccountKey(info);
+  if (info === currentAccountInfo && key) {
+    currentAccountInfo.accountKey = key;
+  }
+  return key;
+}
+
+function resolveLastExportTimestamp(settings) {
+  if (!settings) return null;
+  const map = settings.lastExportTimestampMap || {};
+  const key = getAccountKey();
+  if (key && map[key]) {
+    return map[key];
+  }
+  return settings.lastExportTimestamp || null;
+}
+
+function updateLastExportTimestamp(exportTimestamp) {
+  const key = getAccountKey();
+  return browser.storage.local.get({
+    lastExportTimestamp: null,
+    lastExportTimestampMap: {}
+  }).then((existing) => {
+    const map = Object.assign({}, existing.lastExportTimestampMap || {});
+    if (key) {
+      map[key] = exportTimestamp;
+    }
+    const payload = {
+      lastExportTimestamp: exportTimestamp,
+      lastExportTimestampMap: map
+    };
+    return browser.storage.local.set(payload);
+  });
+}
+
 // メッセージリスナー
 browser.runtime.onMessage.addListener(async function(message, sender, sendResponse) {
   if (message.action === "start_download") {
@@ -34,11 +85,19 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
         screenName: message.accountInfo.screenName || null,
         folderSuffix: suffix || null
       };
+      currentAccountInfo.accountKey = computeAccountKey(currentAccountInfo);
       console.log('👤 (Firefox) Account info updated:', currentAccountInfo);
+      browser.storage.local.set({accountInfo: currentAccountInfo});
     } else {
       currentAccountInfo = null;
       console.log('👤 (Firefox) Account info cleared');
+      browser.storage.local.set({accountInfo: null});
     }
+  } else if (message.action === "get_account_info") {
+    if (sendResponse) {
+      sendResponse({accountInfo: currentAccountInfo});
+    }
+    return true;
   } else if (message.action === "fetch_page") {
     let entries = getBookmarkTimeline(message.page).timeline.instructions[0].entries || [];
     let filteredEntries = entries.filter(entry => !entry.entryId.startsWith("cursor-"));
@@ -50,7 +109,8 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
       customCount: 2000,
       dateLimit: 'all',
       customDate: getDefaultDate(),
-      lastExportTimestamp: null
+      lastExportTimestamp: null,
+      lastExportTimestampMap: {}
     });
     
     // 日付フィルタリング: 古いツイートを個別に除外
@@ -74,12 +134,14 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
         case 'custom':
           cutoffDate = new Date(settings.customDate);
           break;
-        case 'last_export':
-          if (settings.lastExportTimestamp) {
-            cutoffDate = new Date(settings.lastExportTimestamp);
-            console.log('📅 Using last export timestamp:', cutoffDate.toISOString());
+        case 'last_export': {
+          const lastExportTs = resolveLastExportTimestamp(settings);
+          if (lastExportTs) {
+            cutoffDate = new Date(lastExportTs);
+            console.log('📅 Using last export timestamp (account):', cutoffDate.toISOString());
           }
           break;
+        }
       }
       
       if (cutoffDate) {
@@ -164,11 +226,12 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
           console.log('💾 Bookmarks saved to storage, count:', finalCount);
           
           // 前回エクスポート日時を設定に記録
-          return browser.storage.local.set({
-            lastExportTimestamp: exportTimestamp
-          });
+          return updateLastExportTimestamp(exportTimestamp);
         }).then(() => {
-          console.log('📅 Export timestamp saved:', new Date(exportTimestamp).toISOString());
+          console.log('📅 Export timestamp saved:', new Date(exportTimestamp).toISOString(), 'for', getAccountKey());
+          if (currentAccountInfo) {
+            currentAccountInfo.lastExportTimestamp = exportTimestamp;
+          }
           // ダウンロード完了後は結果ページを開く（データ件数をURLパラメータで渡す）
           // デバッグのためページを閉じずに新しいタブで開く
           browser.tabs.create({

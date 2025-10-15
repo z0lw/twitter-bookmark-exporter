@@ -5,49 +5,78 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
 });
 
+function computeAccountKey(info) {
+    if (!info) return null;
+    if (info.userId) {
+        return `id:${info.userId}`;
+    }
+    if (info.screenName) {
+        return `sn:${info.screenName.toLowerCase()}`;
+    }
+    return null;
+}
+
+function showLastExport(timestamp) {
+    const infoElement = document.getElementById('last_export_info');
+    if (!timestamp) {
+        infoElement.style.display = 'none';
+        return;
+    }
+    const lastDate = new Date(timestamp);
+    const displayDate = lastDate.toLocaleString('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+    infoElement.textContent = `前回: ${displayDate}`;
+    infoElement.style.display = 'block';
+}
+
 function loadSettings() {
-    // Firefoxのbrowser APIを使用
-    browser.storage.local.get({
-        countLimit: 'all',
-        customCount: 2000,
-        dateLimit: 'all',
-        customDate: getDefaultDate(),
-        downloadFolder: 'Twitter-Bookmarks',
-        lastExportTimestamp: null
-    }).then((settings) => {
-        console.log('📋 Firefox settings loaded:', settings);
-        
-        // 件数制限の復元
-        document.querySelector(`input[name="count_limit"][value="${settings.countLimit}"]`).checked = true;
-        document.getElementById('custom_count').value = settings.customCount;
-        
-        // 期間制限の復元
-        document.querySelector(`input[name="date_limit"][value="${settings.dateLimit}"]`).checked = true;
-        document.getElementById('custom_date').value = settings.customDate;
-        
-        // ダウンロードフォルダの復元
-        document.getElementById('download_folder').value = settings.downloadFolder;
-        
-        // 前回エクスポート日時の表示
-        if (settings.lastExportTimestamp) {
-            const lastDate = new Date(settings.lastExportTimestamp);
-            const displayDate = lastDate.toLocaleString('ja-JP', {
-                timeZone: 'Asia/Tokyo',
-                year: 'numeric',
-                month: '2-digit', 
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-            document.getElementById('last_export_info').textContent = `前回: ${displayDate}`;
-            document.getElementById('last_export_info').style.display = 'block';
-        }
-        
-        updateInputStates();
+    browser.runtime.sendMessage({action: "get_account_info"}).catch(() => null).then((response) => {
+        const runtimeAccount = response && response.accountInfo ? response.accountInfo : null;
+        return browser.storage.local.get({
+            countLimit: 'all',
+            customCount: 2000,
+            dateLimit: 'all',
+            customDate: getDefaultDate(),
+            downloadFolder: 'Twitter-Bookmarks',
+            lastExportTimestamp: null,
+            lastExportTimestampMap: {},
+            accountInfo: null
+        }).then((settings) => {
+            console.log('📋 Firefox settings loaded:', settings);
+            
+            // 件数制限の復元
+            document.querySelector(`input[name="count_limit"][value="${settings.countLimit}"]`).checked = true;
+            document.getElementById('custom_count').value = settings.customCount;
+            
+            // 期間制限の復元
+            document.querySelector(`input[name="date_limit"][value="${settings.dateLimit}"]`).checked = true;
+            document.getElementById('custom_date').value = settings.customDate;
+            
+            // ダウンロードフォルダの復元
+            document.getElementById('download_folder').value = settings.downloadFolder;
+            
+            const accountInfo = runtimeAccount || settings.accountInfo || null;
+            const map = settings.lastExportTimestampMap || {};
+            const key = computeAccountKey(accountInfo);
+            let timestamp = null;
+            if (key && map[key]) {
+                timestamp = map[key];
+            } else if (settings.lastExportTimestamp) {
+                timestamp = settings.lastExportTimestamp;
+            }
+            showLastExport(timestamp);
+            
+            updateInputStates();
+        });
     }).catch((error) => {
         console.error('❌ Failed to load settings:', error);
-        // デフォルト値で初期化
         updateInputStates();
     });
 }

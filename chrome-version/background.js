@@ -19,6 +19,75 @@ function getBookmarkTimeline(response) {
   return response.data.bookmark_timeline_v2 || response.data.bookmark_collection_timeline;
 }
 
+function computeAccountKey(info) {
+  if (!info) return null;
+  if (info.userId) {
+    return `id:${info.userId}`;
+  }
+  if (info.screenName) {
+    return `sn:${info.screenName.toLowerCase()}`;
+  }
+  return null;
+}
+
+function getAccountKey(info = currentAccountInfo) {
+  if (!info) return null;
+  if (info.accountKey) {
+    return info.accountKey;
+  }
+  const key = computeAccountKey(info);
+  if (info === currentAccountInfo && key) {
+    currentAccountInfo.accountKey = key;
+  }
+  return key;
+}
+
+function resolveLastExportTimestamp(settings) {
+  if (!settings) return null;
+  const map = settings.lastExportTimestampMap || {};
+  const key = getAccountKey();
+  if (key && map[key]) {
+    return map[key];
+  }
+  return settings.lastExportTimestamp || null;
+}
+
+function updateLastExportTimestamp(exportTimestamp) {
+  const key = getAccountKey();
+  return new Promise((resolve, reject) => {
+    chrome.storage.sync.get({
+      lastExportTimestamp: null,
+      lastExportTimestampMap: {}
+    }, (existing) => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+        return;
+      }
+      const map = Object.assign({}, existing.lastExportTimestampMap || {});
+      if (key) {
+        map[key] = exportTimestamp;
+      }
+      const payload = {
+        lastExportTimestamp: exportTimestamp,
+        lastExportTimestampMap: map
+      };
+      chrome.storage.sync.set(payload, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+          return;
+        }
+        chrome.storage.local.set(payload, () => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+            return;
+          }
+          resolve();
+        });
+      });
+    });
+  });
+}
+
 // メッセージリスナー
 chrome.runtime.onMessage.addListener(async function(message, sender, sendResponse) {
   if (message.action === "start_download") {
@@ -34,11 +103,19 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
         screenName: message.accountInfo.screenName || null,
         folderSuffix: suffix || null
       };
+      currentAccountInfo.accountKey = computeAccountKey(currentAccountInfo);
       console.log('👤 Account info updated:', currentAccountInfo);
+      chrome.storage.local.set({accountInfo: currentAccountInfo});
     } else {
       currentAccountInfo = null;
       console.log('👤 Account info cleared');
+      chrome.storage.local.set({accountInfo: null});
     }
+  } else if (message.action === "get_account_info") {
+    if (sendResponse) {
+      sendResponse({accountInfo: currentAccountInfo});
+    }
+    return true;
   } else if (message.action === "fetch_page") {
     let entries = getBookmarkTimeline(message.page).timeline.instructions[0].entries || [];
     let filteredEntries = entries.filter(entry => !entry.entryId.startsWith("cursor-"));
@@ -50,7 +127,8 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
       customCount: 2000,
       dateLimit: 'all',
       customDate: getDefaultDate(),
-      lastExportTimestamp: null
+      lastExportTimestamp: null,
+      lastExportTimestampMap: {}
     });
     
     // 日付フィルタリング: 古いツイートを個別に除外
@@ -74,12 +152,14 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
         case 'custom':
           cutoffDate = new Date(settings.customDate);
           break;
-        case 'last_export':
-          if (settings.lastExportTimestamp) {
-            cutoffDate = new Date(settings.lastExportTimestamp);
-            console.log('📅 Using last export timestamp:', cutoffDate.toISOString());
+        case 'last_export': {
+          const lastExportTs = resolveLastExportTimestamp(settings);
+          if (lastExportTs) {
+            cutoffDate = new Date(lastExportTs);
+            console.log('📅 Using last export timestamp (account):', cutoffDate.toISOString());
           }
           break;
+        }
       }
       
       if (cutoffDate) {
@@ -164,10 +244,13 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
           console.log('💾 Bookmarks saved to storage, count:', finalCount);
           
           // 前回エクスポート日時を設定に記録
-          chrome.storage.sync.set({
-            lastExportTimestamp: exportTimestamp
-          }, () => {
-            console.log('📅 Export timestamp saved:', new Date(exportTimestamp).toISOString());
+          updateLastExportTimestamp(exportTimestamp).then(() => {
+            console.log('📅 Export timestamp saved:', new Date(exportTimestamp).toISOString(), 'for', getAccountKey());
+            if (currentAccountInfo) {
+              currentAccountInfo.lastExportTimestamp = exportTimestamp;
+            }
+          }).catch((error) => {
+            console.error('❌ Failed to update last export timestamp:', error);
           });
           // ダウンロード完了後は結果ページを開く（データ件数をURLパラメータで渡す）
           // デバッグのためページを閉じずに新しいタブで開く

@@ -5,44 +5,79 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
 });
 
+function computeAccountKey(info) {
+    if (!info) return null;
+    if (info.userId) {
+        return `id:${info.userId}`;
+    }
+    if (info.screenName) {
+        return `sn:${info.screenName.toLowerCase()}`;
+    }
+    return null;
+}
+
+function showLastExport(timestamp) {
+    const infoElement = document.getElementById('last_export_info');
+    if (!timestamp) {
+        infoElement.style.display = 'none';
+        return;
+    }
+    const lastDate = new Date(timestamp);
+    const displayDate = lastDate.toLocaleString('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+    infoElement.textContent = `前回: ${displayDate}`;
+    infoElement.style.display = 'block';
+}
+
 function loadSettings() {
-    // 保存された設定を読み込み
-    chrome.storage.sync.get({
-        countLimit: 'all',
-        customCount: 2000,
-        dateLimit: 'all',
-        customDate: getDefaultDate(),
-        downloadFolder: 'Twitter-Bookmarks',
-        lastExportTimestamp: null
-    }, (settings) => {
-        // 件数制限の復元
-        document.querySelector(`input[name="count_limit"][value="${settings.countLimit}"]`).checked = true;
-        document.getElementById('custom_count').value = settings.customCount;
-        
-        // 期間制限の復元
-        document.querySelector(`input[name="date_limit"][value="${settings.dateLimit}"]`).checked = true;
-        document.getElementById('custom_date').value = settings.customDate;
-        
-        // ダウンロードフォルダの復元
-        document.getElementById('download_folder').value = settings.downloadFolder;
-        
-        // 前回エクスポート日時の表示
-        if (settings.lastExportTimestamp) {
-            const lastDate = new Date(settings.lastExportTimestamp);
-            const displayDate = lastDate.toLocaleString('ja-JP', {
-                timeZone: 'Asia/Tokyo',
-                year: 'numeric',
-                month: '2-digit', 
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-            document.getElementById('last_export_info').textContent = `前回: ${displayDate}`;
-            document.getElementById('last_export_info').style.display = 'block';
+    chrome.runtime.sendMessage({action: "get_account_info"}, (response) => {
+        let runtimeAccount = null;
+        if (!chrome.runtime.lastError && response && response.accountInfo) {
+            runtimeAccount = response.accountInfo;
         }
-        
-        updateInputStates();
+
+        chrome.storage.sync.get({
+            countLimit: 'all',
+            customCount: 2000,
+            dateLimit: 'all',
+            customDate: getDefaultDate(),
+            downloadFolder: 'Twitter-Bookmarks',
+            lastExportTimestamp: null,
+            lastExportTimestampMap: {}
+        }, (settings) => {
+            // 件数制限の復元
+            document.querySelector(`input[name="count_limit"][value="${settings.countLimit}"]`).checked = true;
+            document.getElementById('custom_count').value = settings.customCount;
+            
+            // 期間制限の復元
+            document.querySelector(`input[name="date_limit"][value="${settings.dateLimit}"]`).checked = true;
+            document.getElementById('custom_date').value = settings.customDate;
+            
+            // ダウンロードフォルダの復元
+            document.getElementById('download_folder').value = settings.downloadFolder;
+            
+            chrome.storage.local.get(['accountInfo'], (localData) => {
+                const accountInfo = runtimeAccount || localData.accountInfo || null;
+                const map = settings.lastExportTimestampMap || {};
+                const key = computeAccountKey(accountInfo);
+                let timestamp = null;
+                if (key && map[key]) {
+                    timestamp = map[key];
+                } else if (settings.lastExportTimestamp) {
+                    timestamp = settings.lastExportTimestamp;
+                }
+                showLastExport(timestamp);
+            });
+            
+            updateInputStates();
+        });
     });
 }
 
