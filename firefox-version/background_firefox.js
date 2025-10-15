@@ -7,6 +7,7 @@ let isDownloading = false;
 let bookmarks = [];
 let currentTab = null;
 let pageLoadListener = null;
+let currentAccountInfo = null;
 
 function getDefaultDate() {
   const date = new Date();
@@ -25,6 +26,19 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
       currentTab = sender.tab;
     }
     startDownload();
+  } else if (message.action === "set_account_info") {
+    if (message.accountInfo && (message.accountInfo.userId || message.accountInfo.screenName)) {
+      const suffix = message.accountInfo.folderSuffix || (message.accountInfo.userId ? message.accountInfo.userId.slice(-4) : null);
+      currentAccountInfo = {
+        userId: message.accountInfo.userId || null,
+        screenName: message.accountInfo.screenName || null,
+        folderSuffix: suffix || null
+      };
+      console.log('👤 (Firefox) Account info updated:', currentAccountInfo);
+    } else {
+      currentAccountInfo = null;
+      console.log('👤 (Firefox) Account info cleared');
+    }
   } else if (message.action === "fetch_page") {
     let entries = getBookmarkTimeline(message.page).timeline.instructions[0].entries || [];
     let filteredEntries = entries.filter(entry => !entry.entryId.startsWith("cursor-"));
@@ -144,16 +158,17 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
         // ローカルストレージに保存
         browser.storage.local.set({
           bookmarks: JSON.stringify(finalBookmarks),
-          sync_at: exportTimestamp
+          sync_at: exportTimestamp,
+          accountInfo: currentAccountInfo
         }).then(() => {
           console.log('💾 Bookmarks saved to storage, count:', finalCount);
           
           // 前回エクスポート日時を設定に記録
-          browser.storage.local.set({
+          return browser.storage.local.set({
             lastExportTimestamp: exportTimestamp
-          }, () => {
-            console.log('📅 Export timestamp saved:', new Date(exportTimestamp).toISOString());
           });
+        }).then(() => {
+          console.log('📅 Export timestamp saved:', new Date(exportTimestamp).toISOString());
           // ダウンロード完了後は結果ページを開く（データ件数をURLパラメータで渡す）
           // デバッグのためページを閉じずに新しいタブで開く
           browser.tabs.create({
@@ -162,6 +177,8 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
           
           // リセットはページ作成後に実行
           bookmarks = [];
+        }).catch((error) => {
+          console.error('❌ Failed to persist bookmarks or timestamp:', error);
         });
       }, 100); // 100ms待機
     } else {
@@ -171,6 +188,7 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
     isDownloading = false;
     browser.browserAction.setBadgeText({text: ""});
     bookmarks = []; // bookmarks配列もリセット
+    currentAccountInfo = null;
     if (currentTab) {
       browser.tabs.remove(currentTab.id);
       currentTab = null;
@@ -195,6 +213,7 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
       console.log('⚠️ Resetting previous download state');
       isDownloading = false;
       bookmarks = [];
+      currentAccountInfo = null;
     }
     
     // 現在のアクティブタブを確認
@@ -210,9 +229,9 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
   } else if (message.action === "get_bookmarks") {
     // 結果ページからのデータ要求
     console.log('📤 get_bookmarks request received');
-    browser.storage.local.get(['bookmarks']).then((result) => {
+    browser.storage.local.get(['bookmarks', 'accountInfo']).then((result) => {
       console.log('📚 Sending bookmarks data, size:', result.bookmarks ? result.bookmarks.length : 'null');
-      sendResponse({bookmarks: result.bookmarks});
+      sendResponse({bookmarks: result.bookmarks, accountInfo: result.accountInfo || currentAccountInfo});
     }).catch((error) => {
       console.error('Storage error:', error);
       sendResponse({error: error.message});
@@ -232,6 +251,7 @@ const startDownload = async (event, stopSortIndex = null) => {
   console.log('Starting download with stopSortIndex:', stopSortIndex);
   console.log('🔍 Current state - isDownloading:', isDownloading, 'credentials:', Object.keys(credentials).length, 'bookmarksURL:', bookmarksURL, 'currentTab:', currentTab?.id);
   console.log('🔑 Credentials details:', credentials);
+  currentAccountInfo = null;
   
   // 設定を読み込み
   const settings = await browser.storage.local.get({

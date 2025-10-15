@@ -7,6 +7,7 @@ let bookmarksURL = null;
 let isDownloading = false;
 let bookmarks = [];
 let currentTab = null;
+let currentAccountInfo = null;
 
 function getDefaultDate() {
   const date = new Date();
@@ -25,6 +26,19 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
       currentTab = sender.tab;
     }
     startDownload();
+  } else if (message.action === "set_account_info") {
+    if (message.accountInfo && (message.accountInfo.userId || message.accountInfo.screenName)) {
+      const suffix = message.accountInfo.folderSuffix || (message.accountInfo.userId ? message.accountInfo.userId.slice(-4) : null);
+      currentAccountInfo = {
+        userId: message.accountInfo.userId || null,
+        screenName: message.accountInfo.screenName || null,
+        folderSuffix: suffix || null
+      };
+      console.log('👤 Account info updated:', currentAccountInfo);
+    } else {
+      currentAccountInfo = null;
+      console.log('👤 Account info cleared');
+    }
   } else if (message.action === "fetch_page") {
     let entries = getBookmarkTimeline(message.page).timeline.instructions[0].entries || [];
     let filteredEntries = entries.filter(entry => !entry.entryId.startsWith("cursor-"));
@@ -144,7 +158,8 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
         // ローカルストレージに保存
         chrome.storage.local.set({
           bookmarks: JSON.stringify(finalBookmarks),
-          sync_at: exportTimestamp
+          sync_at: exportTimestamp,
+          accountInfo: currentAccountInfo
         }).then(() => {
           console.log('💾 Bookmarks saved to storage, count:', finalCount);
           
@@ -192,10 +207,10 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
     // 結果ページからのデータ要求
     console.log('📤 get_bookmarks request received');
     try {
-      chrome.storage.local.get(['bookmarks']).then((result) => {
+      chrome.storage.local.get(['bookmarks', 'accountInfo']).then((result) => {
         console.log('📚 Sending bookmarks data, size:', result.bookmarks ? result.bookmarks.length : 'null');
         if (sendResponse) {
-          sendResponse({bookmarks: result.bookmarks});
+          sendResponse({bookmarks: result.bookmarks, accountInfo: result.accountInfo || currentAccountInfo});
         }
       }).catch((error) => {
         console.error('Storage error:', error);
@@ -223,6 +238,7 @@ chrome.action.setBadgeBackgroundColor({color: "#1CA8FE"});
 const startDownload = async (event, stopSortIndex = null) => {
   console.log('Starting download with stopSortIndex:', stopSortIndex);
   console.log('🔍 Current state - isDownloading:', isDownloading, 'credentials:', Object.keys(credentials).length, 'bookmarksURL:', bookmarksURL, 'currentTab:', currentTab?.id);
+  currentAccountInfo = null;
   
   // 設定を読み込み
   const settings = await chrome.storage.sync.get({

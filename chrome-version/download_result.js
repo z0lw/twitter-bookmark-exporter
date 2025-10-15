@@ -1,4 +1,5 @@
 let bookmarksData = [];
+let accountInfo = null;
 
 // ページ読み込み時にデータを取得
 window.addEventListener('load', () => {
@@ -17,12 +18,16 @@ window.addEventListener('load', () => {
         const timeout = setTimeout(() => {
             console.error('❌ Request timeout - trying direct storage access');
             // フォールバック: 直接ストレージにアクセス
-            chrome.storage.local.get(['bookmarks'], (result) => {
+            chrome.storage.local.get(['bookmarks', 'accountInfo'], (result) => {
                 if (result.bookmarks) {
                     try {
                         bookmarksData = JSON.parse(result.bookmarks);
                         document.getElementById('bookmarkCount').textContent = `${bookmarksData.length}件`;
                         console.log('✅ Bookmarks loaded via direct storage:', bookmarksData.length);
+                        if (result.accountInfo) {
+                            accountInfo = result.accountInfo;
+                            console.log('👤 Account info (fallback):', accountInfo);
+                        }
                     } catch (error) {
                         console.error('❌ Error parsing stored bookmarks:', error);
                     }
@@ -37,12 +42,16 @@ window.addEventListener('load', () => {
             if (chrome.runtime.lastError) {
                 console.error('Chrome runtime error:', chrome.runtime.lastError);
                 // フォールバック: 直接ストレージアクセス
-                chrome.storage.local.get(['bookmarks'], (result) => {
+                chrome.storage.local.get(['bookmarks', 'accountInfo'], (result) => {
                     if (result.bookmarks) {
                         try {
                             bookmarksData = JSON.parse(result.bookmarks);
                             document.getElementById('bookmarkCount').textContent = `${bookmarksData.length}件`;
                             console.log('✅ Bookmarks loaded via fallback:', bookmarksData.length);
+                            if (result.accountInfo) {
+                                accountInfo = result.accountInfo;
+                                console.log('👤 Account info (fallback runtime error):', accountInfo);
+                            }
                         } catch (error) {
                             console.error('❌ Error parsing fallback bookmarks:', error);
                         }
@@ -57,6 +66,10 @@ window.addEventListener('load', () => {
                     bookmarksData = JSON.parse(response.bookmarks);
                     document.getElementById('bookmarkCount').textContent = `${bookmarksData.length}件`;
                     console.log('✅ Bookmarks loaded successfully:', bookmarksData.length);
+                    if (response.accountInfo) {
+                        accountInfo = response.accountInfo;
+                        console.log('👤 Account info received:', accountInfo);
+                    }
                 } catch (error) {
                     console.error('❌ Error parsing bookmarks:', error);
                     console.log('Raw data:', response.bookmarks.substring(0, 100));
@@ -80,6 +93,30 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('downloadTXT').addEventListener('click', () => downloadFile('txt'));
     document.getElementById('downloadMarkdown').addEventListener('click', () => downloadFile('markdown'));
 });
+
+function resolveDownloadFolder(baseFolder) {
+    if (!accountInfo) {
+        return baseFolder;
+    }
+
+    const sanitize = (value) => String(value).replace(/[^a-zA-Z0-9_\-]/g, '');
+    const suffixCandidates = [
+        accountInfo.folderSuffix,
+        accountInfo.screenName,
+        accountInfo.userId ? accountInfo.userId.slice(-4) : null
+    ].filter(Boolean).map(sanitize).filter(Boolean);
+
+    if (suffixCandidates.length === 0) {
+        return baseFolder;
+    }
+
+    const suffix = suffixCandidates[0];
+    const base = (baseFolder && baseFolder.trim().length > 0) ? baseFolder.trim() : 'Twitter-Bookmarks';
+    if (base.endsWith(`_${suffix}`)) {
+        return base;
+    }
+    return `${base}_${suffix}`;
+}
 
 function downloadFile(format) {
     if (bookmarksData.length === 0) {
@@ -119,24 +156,32 @@ function downloadFile(format) {
     
     // 設定からフォルダ名を取得
     chrome.storage.sync.get({downloadFolder: 'Twitter-Bookmarks'}, (settings) => {
-        const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/${filename}` : filename;
-        
-        chrome.downloads.download({
-            url: url,
-            filename: folderPath,
-            saveAs: false // trueにすると保存ダイアログが表示される
-        }, (downloadId) => {
-            if (chrome.runtime.lastError) {
-                console.error('Download error:', chrome.runtime.lastError);
-                // フォールバック: 従来の方法
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+        chrome.storage.local.get(['accountInfo'], (localData) => {
+            if (!accountInfo && localData.accountInfo) {
+                accountInfo = localData.accountInfo;
+                console.log('👤 Account info refreshed for download:', accountInfo);
             }
-            URL.revokeObjectURL(url);
+
+            const effectiveFolder = resolveDownloadFolder(settings.downloadFolder);
+            const folderPath = effectiveFolder ? `${effectiveFolder}/${filename}` : filename;
+            
+            chrome.downloads.download({
+                url: url,
+                filename: folderPath,
+                saveAs: false // trueにすると保存ダイアログが表示される
+            }, (downloadId) => {
+                if (chrome.runtime.lastError) {
+                    console.error('Download error:', chrome.runtime.lastError);
+                    // フォールバック: 従来の方法
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+                URL.revokeObjectURL(url);
+            });
         });
     });
 }
@@ -317,6 +362,14 @@ async function downloadMarkdownFiles(data) {
     const settings = await new Promise((resolve) => {
         chrome.storage.sync.get({downloadFolder: 'Twitter-Bookmarks'}, resolve);
     });
+    const localAccountData = await new Promise((resolve) => {
+        chrome.storage.local.get(['accountInfo'], resolve);
+    });
+    if (!accountInfo && localAccountData.accountInfo) {
+        accountInfo = localAccountData.accountInfo;
+        console.log('👤 Account info refreshed for Markdown:', accountInfo);
+    }
+    const baseFolder = resolveDownloadFolder(settings.downloadFolder);
     
     let fileCount = 0;
     const usedFilenames = new Set(); // 重複ファイル名を防ぐ
@@ -372,7 +425,7 @@ async function downloadMarkdownFiles(data) {
                 }
                 usedFilenames.add(filename);
                 
-                const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/markdown/${filename}` : `markdown/${filename}`;
+                const folderPath = baseFolder ? `${baseFolder}/markdown/${filename}` : `markdown/${filename}`;
                 
                 // Promise化されたダウンロード処理
                 await new Promise((resolve, reject) => {

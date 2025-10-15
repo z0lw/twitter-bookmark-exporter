@@ -1,4 +1,5 @@
 let bookmarksData = [];
+let accountInfo = null;
 
 // Firefox専用 - browser APIのみを使用
 
@@ -15,12 +16,16 @@ window.addEventListener('load', () => {
     if (typeof browser !== 'undefined' && browser.storage) {
         console.log('🔄 Loading bookmarks from Firefox storage...');
         
-        browser.storage.local.get(['bookmarks']).then((result) => {
+        browser.storage.local.get(['bookmarks', 'accountInfo']).then((result) => {
             if (result.bookmarks) {
                 try {
                     bookmarksData = JSON.parse(result.bookmarks);
                     document.getElementById('bookmarkCount').textContent = `${bookmarksData.length}件`;
                     console.log('✅ Bookmarks loaded from storage:', bookmarksData.length);
+                    if (result.accountInfo) {
+                        accountInfo = result.accountInfo;
+                        console.log('👤 Account info loaded:', accountInfo);
+                    }
                 } catch (error) {
                     console.error('❌ Error parsing stored bookmarks:', error);
                 }
@@ -42,6 +47,29 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('downloadTXT').addEventListener('click', () => downloadFile('txt'));
     document.getElementById('downloadMarkdown').addEventListener('click', () => downloadFile('markdown'));
 });
+
+function resolveDownloadFolder(baseFolder) {
+    if (!accountInfo) {
+        return baseFolder;
+    }
+    const sanitize = (value) => String(value).replace(/[^a-zA-Z0-9_\-]/g, '');
+    const suffixCandidates = [
+        accountInfo.folderSuffix,
+        accountInfo.screenName,
+        accountInfo.userId ? String(accountInfo.userId).slice(-4) : null
+    ].filter(Boolean).map(sanitize).filter(Boolean);
+
+    if (suffixCandidates.length === 0) {
+        return baseFolder;
+    }
+
+    const suffix = suffixCandidates[0];
+    const base = (baseFolder && baseFolder.trim().length > 0) ? baseFolder.trim() : 'Twitter-Bookmarks';
+    if (base.endsWith(`_${suffix}`)) {
+        return base;
+    }
+    return `${base}_${suffix}`;
+}
 
 function downloadFile(format) {
     if (bookmarksData.length === 0) {
@@ -80,8 +108,13 @@ function downloadFile(format) {
     const url = URL.createObjectURL(blob);
     
     // 設定からフォルダ名を取得して自動保存
-    browser.storage.local.get({downloadFolder: 'Twitter-Bookmarks'}).then((settings) => {
-        const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/${filename}` : filename;
+    browser.storage.local.get({downloadFolder: 'Twitter-Bookmarks', accountInfo: null}).then((settings) => {
+        if (!accountInfo && settings.accountInfo) {
+            accountInfo = settings.accountInfo;
+            console.log('👤 Account info refreshed for download:', accountInfo);
+        }
+        const effectiveFolder = resolveDownloadFolder(settings.downloadFolder);
+        const folderPath = effectiveFolder ? `${effectiveFolder}/${filename}` : filename;
         
         browser.downloads.download({
             url: url,
@@ -241,9 +274,12 @@ async function downloadMarkdownFiles(data) {
     console.log(`  - Unique tweet IDs: ${uniqueTweetIds.size}`);
     
     // 設定を最初に一度だけ取得
-    const settings = await new Promise((resolve) => {
-        browser.storage.local.get({downloadFolder: 'Twitter-Bookmarks'}, resolve);
-    });
+    const storageSnapshot = await browser.storage.local.get({downloadFolder: 'Twitter-Bookmarks', accountInfo: null});
+    if (!accountInfo && storageSnapshot.accountInfo) {
+        accountInfo = storageSnapshot.accountInfo;
+        console.log('👤 Account info refreshed for Markdown:', accountInfo);
+    }
+    const baseFolder = resolveDownloadFolder(storageSnapshot.downloadFolder);
     
     let fileCount = 0;
     const usedFilenames = new Set(); // 重複ファイル名を防ぐ
@@ -296,7 +332,7 @@ async function downloadMarkdownFiles(data) {
                 }
                 usedFilenames.add(filename);
                 
-                const folderPath = settings.downloadFolder ? `${settings.downloadFolder}/markdown/${filename}` : `markdown/${filename}`;
+                const folderPath = baseFolder ? `${baseFolder}/markdown/${filename}` : `markdown/${filename}`;
                 
                 // Firefox版 - 自動保存設定を適用
                 const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });

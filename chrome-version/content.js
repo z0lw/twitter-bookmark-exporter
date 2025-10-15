@@ -12,11 +12,114 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function extractAccountInfo() {
+  const info = {};
+  let hasInfo = false;
+
+  const sanitize = (value) => String(value).replace(/[^a-zA-Z0-9_\-]/g, '');
+
+  try {
+    const metaId = document.querySelector('meta[name="session-user-id"]');
+    if (metaId && metaId.content) {
+      info.userId = metaId.content.trim();
+      hasInfo = true;
+    }
+    const metaName = document.querySelector('meta[name="session-username"]');
+    if (metaName && metaName.content) {
+      info.screenName = metaName.content.trim();
+      hasInfo = true;
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to read session meta tags:', error);
+  }
+
+  if (!info.userId) {
+    try {
+      const initialState = window.__INITIAL_STATE__ || window.__META_DATA__;
+      const session = initialState?.session || initialState?.user;
+      if (session?.user_id) {
+        info.userId = String(session.user_id);
+        hasInfo = true;
+      }
+      if (!info.screenName && session?.user?.legacy?.screen_name) {
+        info.screenName = session.user.legacy.screen_name;
+        hasInfo = true;
+      }
+      if (!info.screenName && session?.screen_name) {
+        info.screenName = session.screen_name;
+        hasInfo = true;
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to parse __INITIAL_STATE__:', error);
+    }
+  }
+
+  try {
+    const cookieString = document.cookie || '';
+    const twidMatch = cookieString.match(/(?:^|;\s*)twid=([^;]+)/);
+    if (twidMatch) {
+      const decoded = decodeURIComponent(twidMatch[1]);
+      const idMatch = decoded.match(/u=(\d+)/);
+      if (idMatch) {
+        info.userId = idMatch[1];
+        hasInfo = true;
+      }
+    }
+  } catch (error) {
+    console.warn('⚠️ Failed to parse twid cookie:', error);
+  }
+
+  if (!info.screenName) {
+    try {
+      const profileLink = document.querySelector('a[role="link"][data-testid="AppTabBar_Profile_Link"]');
+      if (profileLink && profileLink.href) {
+        const path = new URL(profileLink.href, location.origin).pathname;
+        const handle = path.replace(/^\/+/, '');
+        if (handle) {
+          info.screenName = handle;
+          hasInfo = true;
+        }
+      }
+      if (!info.screenName) {
+        const handleElement = Array.from(document.querySelectorAll('div[data-testid="SideNav_AccountSwitcher_Button"] span'))
+          .find(el => el.textContent && el.textContent.trim().startsWith('@'));
+        if (handleElement) {
+          info.screenName = handleElement.textContent.trim().replace(/^@/, '');
+          hasInfo = true;
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to extract screen name from DOM:', error);
+    }
+  }
+
+  if (info.screenName) {
+    const screenSuffix = sanitize(info.screenName);
+    if (screenSuffix.length > 0) {
+      info.folderSuffix = screenSuffix;
+    }
+  }
+  if (!info.folderSuffix && info.userId) {
+    info.folderSuffix = sanitize(info.userId.slice(-4));
+  }
+
+  if (!hasInfo) {
+    return null;
+  }
+  return info;
+}
+
 chrome.runtime.onMessage.addListener(async function(message, sender, sendResponse) {
   let overlay;
   console.log('📧 Content script received message:', message.action);
   
   if (message.action === "iconClicked") {
+    const accountInfo = extractAccountInfo();
+    if (accountInfo) {
+      chrome.runtime.sendMessage({action: "set_account_info", accountInfo});
+    } else {
+      chrome.runtime.sendMessage({action: "set_account_info", accountInfo: null});
+    }
     console.log('🎯 Processing iconClicked with bookmarksURL:', message.bookmarksURL);
     let baseURL = message.bookmarksURL.split("?")[0];
     let queryParams = message.bookmarksURL.split("?")[1];
