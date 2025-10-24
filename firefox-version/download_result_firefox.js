@@ -137,6 +137,98 @@ function downloadFile(format) {
     });
 }
 
+function normalizeUserCandidate(candidate) {
+    if (!candidate || typeof candidate !== 'object') {
+        return null;
+    }
+    if (candidate.__typename === 'User') {
+        return candidate;
+    }
+    if (candidate.legacy && (candidate.rest_id || candidate.id_str || candidate.legacy.screen_name)) {
+        return candidate;
+    }
+    if (candidate.result && candidate !== candidate.result) {
+        return normalizeUserCandidate(candidate.result);
+    }
+    if (candidate.user && candidate !== candidate.user) {
+        return normalizeUserCandidate(candidate.user);
+    }
+    if (!candidate.legacy && candidate.screen_name) {
+        return {
+            legacy: candidate,
+            core: candidate.core || {},
+            rest_id: candidate.rest_id || candidate.id_str || candidate.user_id_str || ''
+        };
+    }
+    return null;
+}
+
+function addUserCandidatesFromUserResults(userResults, bucket) {
+    if (!userResults) return;
+    if (userResults.result) {
+        bucket.push(userResults.result);
+    }
+    if (Array.isArray(userResults.results)) {
+        userResults.results.forEach(entry => bucket.push(entry));
+    }
+    if (Array.isArray(userResults.users)) {
+        userResults.users.forEach(entry => bucket.push(entry));
+    }
+}
+
+function addUserCandidatesFromTweet(tweet, bucket) {
+    if (!tweet || typeof tweet !== 'object') return;
+    const actualTweet = (tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) ? tweet.tweet : tweet;
+    if (!actualTweet) return;
+    addUserCandidatesFromUserResults(actualTweet.core?.user_results, bucket);
+    if (actualTweet.core?.user) {
+        bucket.push(actualTweet.core.user);
+    }
+    if (actualTweet.author) {
+        bucket.push(actualTweet.author);
+    }
+    if (actualTweet.user) {
+        bucket.push(actualTweet.user);
+    }
+    if (actualTweet.note_tweet?.note_tweet_results?.result) {
+        addUserCandidatesFromTweet(actualTweet.note_tweet.note_tweet_results.result, bucket);
+    }
+}
+
+function resolveUserEntitiesFromItem(item) {
+    const fallback = { user: {}, userCore: {}, userLegacy: {}, avatar: {} };
+    if (!item || typeof item !== 'object') {
+        return fallback;
+    }
+    const candidates = [];
+    const tweetResult = item.content?.itemContent?.tweet_results?.result;
+    if (tweetResult) {
+        addUserCandidatesFromTweet(tweetResult, candidates);
+    }
+    if (item.content?.user_results) {
+        addUserCandidatesFromUserResults(item.content.user_results, candidates);
+    }
+    if (Array.isArray(candidates) && candidates.length > 0) {
+        for (const candidate of candidates) {
+            const normalized = normalizeUserCandidate(candidate);
+            if (!normalized) continue;
+            const userCore = normalized.core || {};
+            const userLegacy = normalized.legacy || {};
+            const hasIdentity = !!(userLegacy.screen_name || userCore.screen_name || userLegacy.name || userCore.name);
+            if (!hasIdentity) continue;
+            const avatar = candidate?.avatar || normalized.avatar || {};
+            return { user: normalized, userCore, userLegacy, avatar };
+        }
+        for (const candidate of candidates) {
+            const normalized = normalizeUserCandidate(candidate);
+            if (!normalized) continue;
+            const avatar = candidate?.avatar || normalized.avatar || {};
+            return { user: normalized, userCore: normalized.core || {}, userLegacy: normalized.legacy || {}, avatar };
+        }
+    }
+    return fallback;
+}
+
 function convertToCSV(data) {
     const headers = ['日付', 'ユーザー名', 'ユーザーID', 'ツイート内容', 'いいね数', 'RT数', 'URL'];
     const rows = [headers.join(',')];
@@ -146,10 +238,9 @@ function convertToCSV(data) {
             const tweet = item.content.itemContent.tweet_results.result;
             if (tweet && tweet.legacy) {
                 const legacy = tweet.legacy;
-                const userResult = tweet.core?.user_results?.result || {};
-                const userLegacy = userResult.legacy || {};
-                const resolvedName = (userLegacy.name || userResult.core?.name || '').replace(/"/g, '""');
-                const resolvedScreenName = userLegacy.screen_name || userResult.core?.screen_name || '';
+                const { userCore, userLegacy } = resolveUserEntitiesFromItem(item);
+                const resolvedName = (userLegacy.name || userCore.name || '').replace(/"/g, '""');
+                const resolvedScreenName = userLegacy.screen_name || userCore.screen_name || '';
                 
                 // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
                 let tweetText = legacy.full_text || '';
@@ -185,10 +276,9 @@ function convertToText(data) {
             const tweet = item.content.itemContent.tweet_results.result;
             if (tweet && tweet.legacy) {
                 const legacy = tweet.legacy;
-                const userResult = tweet.core?.user_results?.result || {};
-                const userLegacy = userResult.legacy || {};
-                const resolvedName = userLegacy.name || userResult.core?.name || '';
-                const resolvedScreenName = userLegacy.screen_name || userResult.core?.screen_name || '';
+                const { userCore, userLegacy } = resolveUserEntitiesFromItem(item);
+                const resolvedName = userLegacy.name || userCore.name || '';
+                const resolvedScreenName = userLegacy.screen_name || userCore.screen_name || '';
                 
                 // テキスト取得: is_expandable=true の場合は note_tweet のテキストを使用
                 let tweetText = legacy.full_text || '';
@@ -287,11 +377,9 @@ async function downloadMarkdownFiles(data) {
     const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     // 補助: ファイル名用のscreen_name抽出（多様なレスポンスに対応）
-    function getScreenNameForFilename(tw) {
-        if (!tw) return 'unknown';
-        let t = (tw.__typename === 'TweetWithVisibilityResults' && tw.tweet) ? tw.tweet : tw;
-        const ur = t.core?.user_results?.result;
-        const sn = ur?.legacy?.screen_name || ur?.core?.screen_name;
+    function getScreenNameForFilename(itemForName) {
+        const { userCore, userLegacy } = resolveUserEntitiesFromItem(itemForName);
+        const sn = userLegacy.screen_name || userCore.screen_name;
         return (sn && typeof sn === 'string' && sn.length > 0) ? sn : 'unknown';
     }
 
@@ -319,7 +407,7 @@ async function downloadMarkdownFiles(data) {
                 const markdown = convertToMarkdown(item);
                 
                 // ユーザー名取得（堅牢化）
-                let username = getScreenNameForFilename(tweet);
+                let username = getScreenNameForFilename(item);
                 
                 // 一意のファイル名を生成（重複を防ぐ）
                 let baseFilename = `@${username}_${tweetId}`;
@@ -413,43 +501,21 @@ function convertToMarkdown(item) {
     if (tweet && tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) {
         tweet = tweet.tweet;
     }
-    const legacy = tweet.legacy;
+    const legacy = tweet.legacy || {};
     
-    // ユーザー情報の取得パスを修正（実際のJSON構造に基づく）
-    let user = {};
-    let userCore = {};
-    let userLegacy = {};
-    let avatar = {};
-    // プロフィール関連の初期値
-    let escapedProfile = '';
-    let profileBannerUrl = '';
-    let profileLocation = '';
+    const { user, userCore, userLegacy, avatar: avatarCandidate } = resolveUserEntitiesFromItem(item);
+    const avatar = avatarCandidate && Object.keys(avatarCandidate).length > 0 ? avatarCandidate : (userLegacy.profile_image_url_https ? { image_url: userLegacy.profile_image_url_https } : {});
+    const profileDesc = userLegacy.description || '';
+    const escapedProfile = profileDesc.replace(/\"/g, '\\"').replace(/\n/g, '\\n');
+    const profileBannerUrl = userLegacy.profile_banner_url || '';
+    const profileLocation = userLegacy.location || '';
     let profileUrl = '';
-    
-    if (tweet.core?.user_results?.result) {
-        const userResult = tweet.core.user_results.result;
-        user = userResult;
-        // Firefox版では legacy にユーザー情報がある
-        userLegacy = userResult.legacy || {};
-        userCore = userLegacy; // legacyをuserCoreとして使用
-        avatar = userResult.avatar || {};
-        
-        // プロフィール説明とバナーURL
-        const profileDesc = (userLegacy.description || '');
-        escapedProfile = profileDesc.replace(/\"/g, '\\"').replace(/\n/g, '\\n');
-        profileBannerUrl = userLegacy.profile_banner_url || '';
-        profileLocation = userLegacy.location || '';
-        try {
-            if (userLegacy.entities && userLegacy.entities.url && Array.isArray(userLegacy.entities.url.urls) && userLegacy.entities.url.urls.length > 0) {
-                profileUrl = userLegacy.entities.url.urls[0].expanded_url || userLegacy.entities.url.urls[0].url || '';
-            }
-        } catch (e) {
-            profileUrl = '';
+    try {
+        if (userLegacy.entities && userLegacy.entities.url && Array.isArray(userLegacy.entities.url.urls) && userLegacy.entities.url.urls.length > 0) {
+            profileUrl = userLegacy.entities.url.urls[0].expanded_url || userLegacy.entities.url.urls[0].url || '';
         }
-
-        if (!avatar.image_url && userLegacy.profile_image_url_https) {
-            avatar.image_url = userLegacy.profile_image_url_https;
-        }
+    } catch (e) {
+        profileUrl = '';
     }
     
     // 日付変換（日本時間で表示）
@@ -475,8 +541,15 @@ function convertToMarkdown(item) {
     const resolvedProfileName = userCore.name || userLegacy.name || '';
     const resolvedScreenName = userCore.screen_name || userLegacy.screen_name || '';
     
-    // ソースURL生成
-    const sourceUrl = resolvedScreenName ? `https://x.com/${resolvedScreenName}/status/${tweet.rest_id}` : `https://x.com/i/status/${tweet.rest_id}`;
+    // ソースURL生成とID解決
+    const userIdCandidate = user?.rest_id || userLegacy.rest_id || userLegacy.user_id_str || legacy.user_id_str || '';
+    const tweetIdCandidate = tweet?.rest_id || legacy.id_str || '';
+    const resolvedUserId = userIdCandidate ? String(userIdCandidate) : '';
+    const resolvedTweetId = tweetIdCandidate ? String(tweetIdCandidate) : '';
+    const escapedUserId = resolvedUserId.replace(/"/g, '\\"');
+    const escapedTweetId = resolvedTweetId.replace(/"/g, '\\"');
+    const sourceUrlTweetId = resolvedTweetId || tweet.rest_id || legacy.id_str || '';
+    const sourceUrl = resolvedScreenName ? `https://x.com/${resolvedScreenName}/status/${sourceUrlTweetId}` : `https://x.com/i/status/${sourceUrlTweetId}`;
     
     // メディアURL取得
     const mediaUrls = [];
@@ -504,11 +577,12 @@ function convertToMarkdown(item) {
     markdown += `Date: ${createdAt}\n`;
     markdown += `twi_ProfileName: ${resolvedProfileName}\n`;
     markdown += `twi_ScreenName: ${resolvedScreenName}\n`;
-    markdown += `twi_UserId: ${user.rest_id || ''}\n`;
-    markdown += `twi_TweetId: ${tweet.rest_id || ''}\n`;
+    markdown += `twi_UserId: "${escapedUserId}"\n`;
+    markdown += `twi_TweetId: "${escapedTweetId}"\n`;
     markdown += `twi_BookmarkDate: ${bookmarkDate}\n`;
     markdown += `twi_source: ${sourceUrl}\n`;
-    markdown += `twi_profile_icon_url: ${avatar.image_url || userLegacy.profile_image_url_https || ''}\n`;
+    const profileIconUrl = avatar.image_url || userLegacy.profile_image_url_https || '';
+    markdown += `twi_profile_icon_url: ${profileIconUrl}\n`;
     markdown += `twi_profile_banner_url: ${profileBannerUrl}\n`;
     markdown += `twi_profile: "${escapedProfile}"\n`;
     markdown += `twi_profile_url: ${profileUrl}\n`;

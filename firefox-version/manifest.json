@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Twitter Bookmarks Export - Firefox",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Firefox版：Twitterブックマークをエクスポート",
   
   "browser_specific_settings": {
