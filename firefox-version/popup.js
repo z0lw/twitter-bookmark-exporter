@@ -122,6 +122,15 @@ function startDownload() {
         showStatus('カスタム日付を選択してください', 'error');
         return;
     }
+
+    // 前回エクスポート以降の全件を選択した場合、記録があるかチェック
+    if (countLimit === 'since_last_export') {
+        const hasLastExport = document.getElementById('last_export_info').style.display !== 'none';
+        if (!hasLastExport) {
+            showStatus('前回エクスポートの記録がありません。初回は他のオプションを使用してください。', 'error');
+            return;
+        }
+    }
     
     // フォルダ名の検証
     if (downloadFolder && !/^[a-zA-Z0-9_\-\s\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]+$/.test(downloadFolder)) {

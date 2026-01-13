@@ -132,11 +132,14 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
     });
     
     // 日付フィルタリング: 古いツイートを個別に除外
-    if (settings.dateLimit !== 'all') {
+    // since_last_export の場合は dateLimit を last_export として扱う
+    const effectiveDateLimit = settings.countLimit === 'since_last_export' ? 'last_export' : settings.dateLimit;
+
+    if (effectiveDateLimit !== 'all') {
       let cutoffDate;
       const now = new Date();
-      
-      switch (settings.dateLimit) {
+
+      switch (effectiveDateLimit) {
         case '1month':
           cutoffDate = new Date(now.setMonth(now.getMonth() - 1));
           break;
@@ -161,25 +164,37 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
           break;
         }
       }
-      
+
       if (cutoffDate) {
         const originalCount = filteredEntries.length;
         const cutoffTimestamp = cutoffDate.getTime(); // ミリ秒レベルでの厳密な比較
-        
+
+        // フィルタリング前に、古いツイートがあるかチェック（停止判定用）
+        const hasOldEntries = filteredEntries.some(entry => {
+          const entryTimestamp = Number(BigInt(entry.sortIndex) >> BigInt(20));
+          return entryTimestamp < cutoffTimestamp;
+        });
+
         filteredEntries = filteredEntries.filter(entry => {
           const entryTimestamp = Number(BigInt(entry.sortIndex) >> BigInt(20));
           return entryTimestamp >= cutoffTimestamp;
         });
         console.log('📅 Date filtered from', originalCount, 'to', filteredEntries.length, 'entries (cutoff:', cutoffDate.toISOString(), ')');
+
+        // 古いツイートが見つかった場合、これ以上取得する必要がないので停止信号を送る
+        if (hasOldEntries && currentTab) {
+          console.log('📅 Found entries older than cutoff, signaling content script to stop');
+          chrome.tabs.sendMessage(currentTab.id, {action: "stop_download", reason: "date_limit_reached"});
+        }
       }
     }
     
-    // 件数制限チェック
-    if (settings.countLimit !== 'all') {
+    // 件数制限チェック（since_last_export の場合は件数制限なし）
+    if (settings.countLimit !== 'all' && settings.countLimit !== 'since_last_export') {
       const maxCount = settings.countLimit === 'custom' ? settings.customCount : parseInt(settings.countLimit);
       const currentCount = bookmarks.length;
       const remainingSlots = maxCount - currentCount;
-      
+
       if (remainingSlots <= 0) {
         console.log('📊 Already reached limit, ignoring this page');
         return;
@@ -205,7 +220,8 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
     console.log('📊 Total bookmarks:', bookmarks.length, '(unique:', uniqueBookmarks.length, ')');
     
     // 制限に達したら強制停止をcontent scriptに通知（finish_downloadは送信しない）
-    if (settings.countLimit !== 'all') {
+    // since_last_export の場合は件数制限なし（日付制限で停止）
+    if (settings.countLimit !== 'all' && settings.countLimit !== 'since_last_export') {
       const maxCount = settings.countLimit === 'custom' ? settings.customCount : parseInt(settings.countLimit);
       if (uniqueBookmarks.length >= maxCount) {
         console.log('📊 Reached unique count limit in background, signaling content script to stop');
