@@ -40,7 +40,7 @@ function loadSettings() {
     browser.runtime.sendMessage({action: "get_account_info"}).catch(() => null).then((response) => {
         const runtimeAccount = response && response.accountInfo ? response.accountInfo : null;
         return browser.storage.local.get({
-            countLimit: 'all',
+            countLimit: 'since_last_export',
             customCount: 2000,
             dateLimit: 'all',
             customDate: getDefaultDate(),

@@ -44,7 +44,7 @@ function loadSettings() {
         }
 
         chrome.storage.sync.get({
-            countLimit: 'all',
+            countLimit: 'since_last_export',
             customCount: 2000,
             dateLimit: 'all',
             customDate: getDefaultDate(),
