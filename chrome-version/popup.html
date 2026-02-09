@@ -97,7 +97,7 @@
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
-            margin-top: 15px;
+            margin-bottom: 15px;
             box-shadow: 0 2px 4px rgba(29, 161, 242, 0.2);
         }
         .start-button:hover {
@@ -147,6 +147,12 @@
             <h1>🚀 Twitter Bookmarks Export</h1>
             <p>ローカル版 - 安全・高速・制限なし</p>
         </div>
+
+        <button class="start-button" id="startBtn">
+            📥 取得を開始
+        </button>
+
+        <div class="status" id="status"></div>
 
         <div class="section">
             <div class="section-title">
@@ -240,11 +246,6 @@
             </div>
         </div>
 
-        <button class="start-button" id="startBtn">
-            📥 取得を開始
-        </button>
-
-        <div class="status" id="status"></div>
     </div>
 
     <script src="popup.js"></script>
