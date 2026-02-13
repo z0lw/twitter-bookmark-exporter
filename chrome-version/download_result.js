@@ -1,5 +1,19 @@
 let bookmarksData = [];
 let accountInfo = null;
+let autoDownloadTriggered = false;
+
+function tryAutoDownload() {
+    if (autoDownloadTriggered || bookmarksData.length === 0) return;
+    chrome.storage.sync.get({autoDownloadFormat: 'none'}, (settings) => {
+        if (autoDownloadTriggered) return;
+        const format = settings.autoDownloadFormat;
+        if (format && format !== 'none') {
+            autoDownloadTriggered = true;
+            console.log(`⚡ 自動ダウンロード開始: ${format}`);
+            downloadFile(format);
+        }
+    });
+}
 
 // ページ読み込み時にデータを取得
 window.addEventListener('load', () => {
@@ -28,6 +42,7 @@ window.addEventListener('load', () => {
                             accountInfo = result.accountInfo;
                             console.log('👤 Account info (fallback):', accountInfo);
                         }
+                        tryAutoDownload();
                     } catch (error) {
                         console.error('❌ Error parsing stored bookmarks:', error);
                     }
@@ -52,6 +67,7 @@ window.addEventListener('load', () => {
                                 accountInfo = result.accountInfo;
                                 console.log('👤 Account info (fallback runtime error):', accountInfo);
                             }
+                            tryAutoDownload();
                         } catch (error) {
                             console.error('❌ Error parsing fallback bookmarks:', error);
                         }
@@ -70,6 +86,7 @@ window.addEventListener('load', () => {
                         accountInfo = response.accountInfo;
                         console.log('👤 Account info received:', accountInfo);
                     }
+                    tryAutoDownload();
                 } catch (error) {
                     console.error('❌ Error parsing bookmarks:', error);
                     console.log('Raw data:', response.bookmarks.substring(0, 100));

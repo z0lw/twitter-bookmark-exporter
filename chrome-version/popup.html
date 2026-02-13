@@ -246,6 +246,24 @@
             </div>
         </div>
 
+        <div class="section">
+            <div class="section-title">
+                ⚡ 自動ダウンロード
+            </div>
+            <div class="options">
+                <div class="option-item" style="flex-direction: column; align-items: stretch;">
+                    <label for="auto_download_format" style="margin-bottom: 5px; font-size: 12px;">取得完了後に自動でダウンロード:</label>
+                    <select id="auto_download_format" class="custom-input" style="width: 100%; margin-left: 0;">
+                        <option value="none">手動（自動ダウンロードしない）</option>
+                        <option value="json">JSON形式</option>
+                        <option value="csv">CSV形式</option>
+                        <option value="txt">テキスト形式</option>
+                        <option value="markdown">Markdown形式</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script src="popup.js"></script>

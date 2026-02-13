@@ -1,5 +1,19 @@
 let bookmarksData = [];
 let accountInfo = null;
+let autoDownloadTriggered = false;
+
+function tryAutoDownload() {
+    if (autoDownloadTriggered || bookmarksData.length === 0) return;
+    browser.storage.local.get({autoDownloadFormat: 'none'}).then((settings) => {
+        if (autoDownloadTriggered) return;
+        const format = settings.autoDownloadFormat;
+        if (format && format !== 'none') {
+            autoDownloadTriggered = true;
+            console.log(`⚡ 自動ダウンロード開始: ${format}`);
+            downloadFile(format);
+        }
+    });
+}
 
 // Firefox専用 - browser APIのみを使用
 
@@ -26,6 +40,7 @@ window.addEventListener('load', () => {
                         accountInfo = result.accountInfo;
                         console.log('👤 Account info loaded:', accountInfo);
                     }
+                    tryAutoDownload();
                 } catch (error) {
                     console.error('❌ Error parsing stored bookmarks:', error);
                 }

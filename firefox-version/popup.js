@@ -45,22 +45,26 @@ function loadSettings() {
             dateLimit: 'all',
             customDate: getDefaultDate(),
             downloadFolder: 'Twitter-Bookmarks',
+            autoDownloadFormat: 'none',
             lastExportTimestamp: null,
             lastExportTimestampMap: {},
             accountInfo: null
         }).then((settings) => {
             console.log('📋 Firefox settings loaded:', settings);
-            
+
             // 件数制限の復元
             document.querySelector(`input[name="count_limit"][value="${settings.countLimit}"]`).checked = true;
             document.getElementById('custom_count').value = settings.customCount;
-            
+
             // 期間制限の復元
             document.querySelector(`input[name="date_limit"][value="${settings.dateLimit}"]`).checked = true;
             document.getElementById('custom_date').value = settings.customDate;
-            
+
             // ダウンロードフォルダの復元
             document.getElementById('download_folder').value = settings.downloadFolder;
+
+            // 自動ダウンロード形式の復元
+            document.getElementById('auto_download_format').value = settings.autoDownloadFormat;
             
             const accountInfo = runtimeAccount || settings.accountInfo || null;
             const map = settings.lastExportTimestampMap || {};
@@ -138,13 +142,16 @@ function startDownload() {
         return;
     }
     
+    const autoDownloadFormat = document.getElementById('auto_download_format').value;
+
     // 設定を保存してからダウンロード開始
     const settingsToSave = {
         countLimit: countLimit,
         customCount: customCount,
         dateLimit: dateLimit,
         customDate: customDate,
-        downloadFolder: downloadFolder || 'Twitter-Bookmarks'
+        downloadFolder: downloadFolder || 'Twitter-Bookmarks',
+        autoDownloadFormat: autoDownloadFormat
     };
     
     console.log('💾 Saving settings:', settingsToSave);
