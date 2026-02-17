@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Twitter Bookmarks Export - Firefox",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Firefox版：Twitterブックマークをエクスポート",
   
   "browser_specific_settings": {
@@ -22,7 +22,7 @@
     "https://x.com/*"
   ],
   "background": {
-    "scripts": ["background_firefox.js"],
+    "scripts": ["converter.js", "background_firefox.js"],
     "persistent": true
   },
   "browser_action": {
@@ -38,6 +38,7 @@
     "download_result.js",
     "download_result_firefox.html",
     "download_result_firefox.js",
+    "converter.js",
     "popup.html",
     "popup.js"
   ],

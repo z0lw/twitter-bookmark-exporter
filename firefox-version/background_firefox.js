@@ -248,14 +248,23 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
           if (currentAccountInfo) {
             currentAccountInfo.lastExportTimestamp = exportTimestamp;
           }
-          // ダウンロード完了後は結果ページを開く（データ件数をURLパラメータで渡す）
-          // デバッグのためページを閉じずに新しいタブで開く
-          browser.tabs.create({
-            url: browser.runtime.getURL('download_result_firefox.html') + '?count=' + finalCount
+          // 自動ダウンロード設定を確認
+          browser.storage.local.get({autoDownloadFormat: 'none'}).then((dlSettings) => {
+            const format = dlSettings.autoDownloadFormat;
+            if (format && format !== 'none') {
+              // 自動ダウンロード: ページ遷移なしで直接ダウンロード
+              console.log('⚡ 自動ダウンロード（ページ遷移なし）:', format);
+              performDirectDownload(format, finalBookmarks, currentAccountInfo);
+            } else {
+              // 手動選択: 結果ページを開く
+              browser.tabs.create({
+                url: browser.runtime.getURL('download_result_firefox.html') + '?count=' + finalCount
+              });
+            }
+
+            // リセット
+            bookmarks = [];
           });
-          
-          // リセットはページ作成後に実行
-          bookmarks = [];
         }).catch((error) => {
           console.error('❌ Failed to persist bookmarks or timestamp:', error);
         });
@@ -584,6 +593,122 @@ browser.webRequest.onBeforeRequest.addListener((details) => {
     browser.tabs.sendMessage(currentTab.id, {action: "selectAllBookmarks"});
   }
 }, {urls: ["*://x.com/*", "*://twitter.com/*"]});
+
+// ページ遷移なしの直接ダウンロード（自動ダウンロード用）
+async function performDirectDownload(format, data, acctInfo) {
+  const settings = await browser.storage.local.get({downloadFolder: 'Twitter-Bookmarks'});
+  const effectiveFolder = resolveDownloadFolder(settings.downloadFolder, acctInfo);
+
+  if (format === 'markdown') {
+    await performDirectMarkdownDownload(data, effectiveFolder);
+    return;
+  }
+
+  let content, filename, mimeType;
+  switch (format) {
+    case 'json':
+      content = JSON.stringify(data, null, 2);
+      filename = `twitter_bookmarks_${new Date().toISOString().split('T')[0]}.json`;
+      mimeType = 'application/json';
+      break;
+    case 'csv':
+      content = convertToCSV(data);
+      filename = `twitter_bookmarks_${new Date().toISOString().split('T')[0]}.csv`;
+      mimeType = 'text/csv';
+      break;
+    case 'txt':
+      content = convertToText(data);
+      filename = `twitter_bookmarks_${new Date().toISOString().split('T')[0]}.txt`;
+      mimeType = 'text/plain';
+      break;
+    default:
+      console.error('❌ Unknown format:', format);
+      return;
+  }
+
+  const blob = new Blob([content], { type: mimeType + ';charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const folderPath = effectiveFolder ? `${effectiveFolder}/${filename}` : filename;
+
+  try {
+    const downloadId = await browser.downloads.download({
+      url: url,
+      filename: folderPath,
+      saveAs: false
+    });
+    console.log('✅ Direct download started:', downloadId, folderPath);
+  } catch (error) {
+    console.error('❌ Direct download error:', error);
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function performDirectMarkdownDownload(data, baseFolder) {
+  console.log(`📝 Background: Starting direct Markdown download for ${data.length} items`);
+
+  const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  let fileCount = 0;
+  const usedFilenames = new Set();
+  const processedTweetIds = new Set();
+
+  function getScreenNameForFilename(item) {
+    const { userCore, userLegacy } = resolveUserEntitiesFromItem(item);
+    const sn = userLegacy.screen_name || userCore.screen_name;
+    return (sn && typeof sn === 'string' && sn.length > 0) ? sn : 'unknown';
+  }
+
+  for (let index = 0; index < data.length; index++) {
+    const item = data[index];
+    if (item.content && item.content.itemContent && item.content.itemContent.tweet_results) {
+      let tweet = item.content.itemContent.tweet_results.result;
+      if (tweet && tweet.__typename === 'TweetWithVisibilityResults' && tweet.tweet) {
+        tweet = tweet.tweet;
+      }
+      if (tweet && tweet.legacy) {
+        const tweetId = tweet.rest_id || `tweet_${index + 1}`;
+        if (processedTweetIds.has(tweetId)) continue;
+        processedTweetIds.add(tweetId);
+
+        const markdown = convertToMarkdown(item);
+        const username = getScreenNameForFilename(item);
+
+        let baseFilename = `@${username}_${tweetId}`;
+        let filename = `${baseFilename}.md`;
+        let counter = 1;
+        while (usedFilenames.has(filename)) {
+          filename = `${baseFilename}_${counter}.md`;
+          counter++;
+        }
+        usedFilenames.add(filename);
+
+        const folderPath = baseFolder ? `${baseFolder}/markdown/${filename}` : `markdown/${filename}`;
+
+        const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+
+        try {
+          await browser.downloads.download({
+            url: url,
+            filename: folderPath,
+            saveAs: false
+          });
+        } catch (error) {
+          console.warn(`⚠️ Download failed for ${filename}:`, error.message || error);
+        }
+        setTimeout(() => URL.revokeObjectURL(url), 500);
+
+        fileCount++;
+        if (index % 10 === 9) {
+          await delay(300);
+        } else {
+          await delay(50);
+        }
+      }
+    }
+  }
+
+  console.log(`✅ Background Markdown download completed: ${fileCount} files`);
+}
 
 // インストール時の処理（外部サービス通信を削除）
 browser.runtime.onInstalled.addListener((details) => {
