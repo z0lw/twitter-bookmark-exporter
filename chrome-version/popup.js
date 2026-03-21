@@ -37,11 +37,38 @@ function showLastExport(timestamp) {
 }
 
 function loadSettings() {
-    chrome.runtime.sendMessage({action: "get_account_info"}, (response) => {
-        let runtimeAccount = null;
-        if (!chrome.runtime.lastError && response && response.accountInfo) {
-            runtimeAccount = response.accountInfo;
+    // アクティブなx.comタブから最新のアカウント情報を取得
+    chrome.tabs.query({url: ["https://twitter.com/*", "https://x.com/*"]}, (tabs) => {
+        let freshAccountPromise;
+        if (tabs && tabs.length > 0) {
+            freshAccountPromise = new Promise((resolve) => {
+                chrome.tabs.sendMessage(tabs[0].id, {action: "get_fresh_account_info"}, (response) => {
+                    if (chrome.runtime.lastError || !response) {
+                        resolve(null);
+                    } else {
+                        resolve(response.accountInfo);
+                    }
+                });
+            });
+        } else {
+            freshAccountPromise = Promise.resolve(null);
         }
+
+        freshAccountPromise.then((freshAccount) => {
+            let runtimeAccount = freshAccount;
+            if (!runtimeAccount) {
+                // フォールバック: backgroundのメモリから取得
+                return new Promise((resolve) => {
+                    chrome.runtime.sendMessage({action: "get_account_info"}, (response) => {
+                        if (!chrome.runtime.lastError && response && response.accountInfo) {
+                            runtimeAccount = response.accountInfo;
+                        }
+                        resolve(runtimeAccount);
+                    });
+                });
+            }
+            return runtimeAccount;
+        }).then((runtimeAccount) => {
 
         chrome.storage.sync.get({
             countLimit: 'since_last_export',
@@ -79,10 +106,12 @@ function loadSettings() {
                 }
                 showLastExport(timestamp);
             });
-            
+
             updateInputStates();
         });
-    });
+
+        }); // freshAccountPromise.then
+    }); // chrome.tabs.query
 }
 
 function setupEventListeners() {

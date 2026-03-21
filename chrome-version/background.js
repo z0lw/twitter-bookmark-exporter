@@ -349,7 +349,6 @@ chrome.action.setBadgeBackgroundColor({color: "#1CA8FE"});
 const startDownload = async (event, stopSortIndex = null) => {
   console.log('Starting download with stopSortIndex:', stopSortIndex);
   console.log('🔍 Current state - isDownloading:', isDownloading, 'credentials:', Object.keys(credentials).length, 'bookmarksURL:', bookmarksURL, 'currentTab:', currentTab?.id);
-  currentAccountInfo = null;
   
   // 設定を読み込み
   const settings = await chrome.storage.sync.get({

@@ -37,8 +37,22 @@ function showLastExport(timestamp) {
 }
 
 function loadSettings() {
-    browser.runtime.sendMessage({action: "get_account_info"}).catch(() => null).then((response) => {
-        const runtimeAccount = response && response.accountInfo ? response.accountInfo : null;
+    // アクティブなx.comタブから最新のアカウント情報を取得
+    browser.tabs.query({url: ["https://twitter.com/*", "https://x.com/*"]}).then((tabs) => {
+        if (tabs && tabs.length > 0) {
+            return browser.tabs.sendMessage(tabs[0].id, {action: "get_fresh_account_info"}).catch(() => null);
+        }
+        return null;
+    }).catch(() => null).then((freshResponse) => {
+        let freshAccount = freshResponse && freshResponse.accountInfo ? freshResponse.accountInfo : null;
+        if (freshAccount) {
+            return freshAccount;
+        }
+        // フォールバック: backgroundのメモリから取得
+        return browser.runtime.sendMessage({action: "get_account_info"}).catch(() => null).then((response) => {
+            return response && response.accountInfo ? response.accountInfo : null;
+        });
+    }).then((runtimeAccount) => {
         return browser.storage.local.get({
             countLimit: 'since_last_export',
             customCount: 2000,

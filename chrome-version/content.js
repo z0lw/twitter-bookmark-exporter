@@ -292,6 +292,11 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
     }
   } else if (message.action === "selectAllBookmarks") {
     document.querySelector('a[href="/i/bookmarks/all"]').click();
+  } else if (message.action === "get_fresh_account_info") {
+    const info = extractAccountInfo();
+    sendAccountInfo(true);
+    sendResponse({accountInfo: info});
+    return true;
   } else if (message.action === "stop_download") {
     console.log('🛑 Received stop signal from background:', message.reason);
     // グローバル変数でダウンロード停止フラグを設定
