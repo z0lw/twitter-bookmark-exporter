@@ -10,6 +10,16 @@ let isDownloading = false;
 let bookmarks = [];
 let currentTab = null;
 let currentAccountInfo = null;
+const BOOKMARKS_PAGE_URL = "https://x.com/i/history";
+
+function isBookmarksPage(url) {
+  if (!url) return false;
+  try {
+    return /^\/i\/(?:history|bookmarks)(?:\/|$)/.test(new URL(url).pathname);
+  } catch (_error) {
+    return false;
+  }
+}
 
 function getDefaultDate() {
   const date = new Date();
@@ -93,7 +103,7 @@ function updateLastExportTimestamp(exportTimestamp) {
 // メッセージリスナー
 chrome.runtime.onMessage.addListener(async function(message, sender, sendResponse) {
   if (message.action === "start_download") {
-    if (sender.tab && sender.tab.url.includes("i/bookmarks")) {
+    if (sender.tab && isBookmarksPage(sender.tab.url)) {
       currentTab = sender.tab;
     }
     startDownload();
@@ -415,7 +425,7 @@ const startDownload = async (event, stopSortIndex = null) => {
       }
     });
   } else {
-    chrome.tabs.create({url: "https://x.com/i/bookmarks"}, (tab) => {
+    chrome.tabs.create({url: BOOKMARKS_PAGE_URL}, (tab) => {
       currentTab = tab;
       let checkInterval = setInterval(() => {
         if (Object.keys(credentials).length === 2 && bookmarksURL) {
@@ -613,7 +623,7 @@ chrome.runtime.onInstalled.addListener((details) => {
           <h2>Twitter Bookmarks Export - Local</h2>
           <p>✅ ローカル版がインストールされました</p>
           <p>🔒 外部サービス通信は削除され、すべてローカルで処理されます</p>
-          <p>🚀 <a href="https://x.com/i/bookmarks" target="_blank">ブックマークページ</a>で青いボタンをクリックして開始</p>
+          <p>🚀 <a href="${BOOKMARKS_PAGE_URL}" target="_blank">ブックマークページ</a>で青いボタンをクリックして開始</p>
           <div style="background: #e8f5fd; padding: 20px; border-radius: 10px; margin-top: 20px;">
             <h3>使い方</h3>
             <p>1. Twitter/X のブックマークページを開く</p>

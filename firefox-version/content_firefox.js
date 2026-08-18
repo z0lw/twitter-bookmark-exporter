@@ -294,7 +294,7 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
       console.log('ℹ️ User cancelled abort, continuing download');
     }
   } else if (message.action === "selectAllBookmarks") {
-    document.querySelector('a[href="/i/bookmarks/all"]').click();
+    document.querySelector('a[href="/i/history/all"], a[href="/i/bookmarks/all"]')?.click();
   } else if (message.action === "get_fresh_account_info") {
     const info = extractAccountInfo();
     sendAccountInfo(true);
@@ -340,7 +340,7 @@ async function fetchBookmarkPage(cursor, credentials, baseURL, params) {
       "x-twitter-auth-type": "OAuth2Session",
       "x-twitter-client-language": "zh-tw"
     },
-    referrer: "https://x.com/i/bookmarks",
+    referrer: "https://x.com/i/history",
     referrerPolicy: "strict-origin-when-cross-origin",
     body: null,
     method: "GET",
@@ -380,7 +380,7 @@ function checkSortIndexCondition(response, sortIndexValue) {
 // 日付フィルタリングはbackground_local.jsで個別に処理
 
 // ブックマークページでエクスポートボタンを追加
-if (document.location.href.includes("bookmarks")) {
+if (/^\/i\/(?:history|bookmarks)(?:\/|$)/.test(document.location.pathname)) {
   function addExportButton(selector, callback) {
     new MutationObserver((mutations, observer) => {
       let element = document.querySelector(selector);

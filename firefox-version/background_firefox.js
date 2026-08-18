@@ -8,6 +8,16 @@ let bookmarks = [];
 let currentTab = null;
 let pageLoadListener = null;
 let currentAccountInfo = null;
+const BOOKMARKS_PAGE_URL = "https://x.com/i/history";
+
+function isBookmarksPage(url) {
+  if (!url) return false;
+  try {
+    return /^\/i\/(?:history|bookmarks)(?:\/|$)/.test(new URL(url).pathname);
+  } catch (_error) {
+    return false;
+  }
+}
 
 function getDefaultDate() {
   const date = new Date();
@@ -73,7 +83,7 @@ function updateLastExportTimestamp(exportTimestamp) {
 // メッセージリスナー
 browser.runtime.onMessage.addListener(async function(message, sender, sendResponse) {
   if (message.action === "start_download") {
-    if (sender.tab && sender.tab.url.includes("i/bookmarks")) {
+    if (sender.tab && isBookmarksPage(sender.tab.url)) {
       currentTab = sender.tab;
     }
     startDownload();
@@ -306,7 +316,7 @@ browser.runtime.onMessage.addListener(async function(message, sender, sendRespon
     
     // 現在のアクティブタブを確認
     browser.tabs.query({active: true, currentWindow: true}).then((tabs) => {
-      if (tabs[0] && tabs[0].url.includes("bookmarks")) {
+      if (tabs[0] && isBookmarksPage(tabs[0].url)) {
         currentTab = tabs[0];
         console.log('📌 Found current tab:', currentTab.id, currentTab.url);
       } else {
@@ -410,7 +420,7 @@ const startDownload = async (event, stopSortIndex = null) => {
     bookmarksURL = null;
     
     // まず既存のブックマークタブを探す
-    browser.tabs.query({url: "*://x.com/i/bookmarks*"}).then(async (existingTabs) => {
+    browser.tabs.query({url: ["*://x.com/i/history*", "*://x.com/i/bookmarks*"]}).then(async (existingTabs) => {
       let targetTab;
       
       if (existingTabs.length > 0) {
@@ -420,7 +430,7 @@ const startDownload = async (event, stopSortIndex = null) => {
         await browser.tabs.update(targetTab.id, {active: true});
       } else {
         console.log('📌 Creating new tab for bookmarks page');
-        targetTab = await browser.tabs.create({url: "https://x.com/i/bookmarks"});
+        targetTab = await browser.tabs.create({url: BOOKMARKS_PAGE_URL});
         console.log('✅ New tab created with ID:', targetTab.id);
       }
       
@@ -533,7 +543,7 @@ const startDownload = async (event, stopSortIndex = null) => {
 // タブが閉じられた時の処理
 browser.tabs.onRemoved.addListener(async (tabId) => {
   // currentTabが設定されていて、かつブックマークタブの場合のみ処理
-  if (currentTab && currentTab.id === tabId && currentTab.url && currentTab.url.includes('/i/bookmarks')) {
+  if (currentTab && currentTab.id === tabId && isBookmarksPage(currentTab.url)) {
     console.log(`📑 Bookmarks tab ${tabId} closed`);
     console.log('⚠️ Current download tab was closed, resetting state');
     isDownloading = false;
@@ -721,7 +731,7 @@ browser.runtime.onInstalled.addListener((details) => {
           <h2>Twitter Bookmarks Export - Local</h2>
           <p>✅ ローカル版がインストールされました</p>
           <p>🔒 外部サービス通信は削除され、すべてローカルで処理されます</p>
-          <p>🚀 <a href="https://x.com/i/bookmarks" target="_blank">ブックマークページ</a>で青いボタンをクリックして開始</p>
+          <p>🚀 <a href="${BOOKMARKS_PAGE_URL}" target="_blank">ブックマークページ</a>で青いボタンをクリックして開始</p>
           <div style="background: #e8f5fd; padding: 20px; border-radius: 10px; margin-top: 20px;">
             <h3>使い方</h3>
             <p>1. Twitter/X のブックマークページを開く</p>
