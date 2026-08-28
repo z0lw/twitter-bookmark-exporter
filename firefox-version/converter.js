@@ -93,6 +93,10 @@ function resolveUserEntitiesFromItem(item) {
     return fallback;
 }
 
+function yamlString(value) {
+    return JSON.stringify(value == null ? '' : String(value));
+}
+
 function resolveDownloadFolder(baseFolder, acctInfo) {
     if (!acctInfo) {
         return baseFolder;
@@ -194,7 +198,6 @@ function convertToMarkdown(item) {
 
     const { user, userCore, userLegacy, avatar } = resolveUserEntitiesFromItem(item);
     const profileDesc = userLegacy.description || '';
-    const escapedProfile = profileDesc.replace(/\"/g, '\\"').replace(/\n/g, '\\n');
     const profileBannerUrl = userLegacy.profile_banner_url || '';
     const profileLocation = userLegacy.location || '';
     let profileUrl = '';
@@ -232,8 +235,6 @@ function convertToMarkdown(item) {
     const tweetIdCandidate = tweet?.rest_id || legacy.id_str || '';
     const resolvedUserId = userIdCandidate ? String(userIdCandidate) : '';
     const resolvedTweetId = tweetIdCandidate ? String(tweetIdCandidate) : '';
-    const escapedUserId = resolvedUserId.replace(/"/g, '\\"');
-    const escapedTweetId = resolvedTweetId.replace(/"/g, '\\"');
     const sourceUrlTweetId = resolvedTweetId || tweet.rest_id || legacy.id_str || '';
     const sourceUrl = resolvedScreenName ? `https://x.com/${resolvedScreenName}/status/${sourceUrlTweetId}` : `https://x.com/i/status/${sourceUrlTweetId}`;
 
@@ -251,27 +252,24 @@ function convertToMarkdown(item) {
         tweetText = tweet.note_tweet.note_tweet_results.result.text;
     }
 
-    const escapedText = tweetText.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-
     let markdown = `---\n`;
     markdown += `twi_isSensitiveMedia:\n`;
     markdown += `Date: ${createdAt}\n`;
-    markdown += `twi_ProfileName: ${resolvedProfileName}\n`;
-    markdown += `twi_ScreenName: ${resolvedScreenName}\n`;
-    markdown += `twi_UserId: "${escapedUserId}"\n`;
-    markdown += `twi_TweetId: "${escapedTweetId}"\n`;
+    markdown += `twi_ProfileName: ${yamlString(resolvedProfileName)}\n`;
+    markdown += `twi_ScreenName: ${yamlString(resolvedScreenName)}\n`;
+    markdown += `twi_UserId: ${yamlString(resolvedUserId)}\n`;
+    markdown += `twi_TweetId: ${yamlString(resolvedTweetId)}\n`;
     markdown += `twi_BookmarkDate: ${bookmarkDate}\n`;
-    markdown += `twi_source: ${sourceUrl}\n`;
+    markdown += `twi_source: ${yamlString(sourceUrl)}\n`;
     const profileIconUrl = avatar.image_url || userLegacy.profile_image_url_https || '';
-    markdown += `twi_profile_icon_url: ${profileIconUrl}\n`;
-    markdown += `twi_profile_banner_url: ${profileBannerUrl}\n`;
-    markdown += `twi_profile: "${escapedProfile}"\n`;
-    markdown += `twi_profile_url: ${profileUrl}\n`;
-    markdown += `twi_profile_location: ${profileLocation}\n`;
-    markdown += `twi_content: "${escapedText}"\n`;
+    markdown += `twi_profile_icon_url: ${yamlString(profileIconUrl)}\n`;
+    markdown += `twi_profile_banner_url: ${yamlString(profileBannerUrl)}\n`;
+    markdown += `twi_profile: ${yamlString(profileDesc)}\n`;
+    markdown += `twi_profile_url: ${yamlString(profileUrl)}\n`;
+    markdown += `twi_profile_location: ${yamlString(profileLocation)}\n`;
 
     for (let i = 0; i < 4; i++) {
-        markdown += `twi_media_url_https${i + 1}: ${mediaUrls[i] || ''}\n`;
+        markdown += `twi_media_url_https${i + 1}: ${yamlString(mediaUrls[i] || '')}\n`;
     }
 
     markdown += `---\n`;
