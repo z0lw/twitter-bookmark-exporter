@@ -120,6 +120,53 @@ function resolveDownloadFolder(baseFolder, acctInfo) {
     return `${base}_${suffix}`;
 }
 
+function addExpandedUrlMappings(entities, mappings) {
+    if (!entities || typeof entities !== 'object') return;
+
+    ['urls', 'media'].forEach(key => {
+        if (!Array.isArray(entities[key])) return;
+        entities[key].forEach(entity => {
+            const shortUrl = entity?.url;
+            const expandedUrl = entity?.unwound_url || entity?.expanded_url;
+            if (shortUrl && expandedUrl && shortUrl !== expandedUrl) {
+                mappings.set(shortUrl, expandedUrl);
+            }
+        });
+    });
+}
+
+function expandTweetTextUrls(text, tweet, legacy, noteTweetResult) {
+    if (!text) return '';
+
+    const mappings = new Map();
+    addExpandedUrlMappings(legacy?.entities, mappings);
+    addExpandedUrlMappings(legacy?.extended_entities, mappings);
+    addExpandedUrlMappings(tweet?.entities, mappings);
+    addExpandedUrlMappings(noteTweetResult?.entity_set, mappings);
+    addExpandedUrlMappings(noteTweetResult?.entities, mappings);
+
+    const quotedPermalink = legacy?.quoted_status_permalink;
+    if (quotedPermalink?.url && quotedPermalink?.expanded) {
+        mappings.set(quotedPermalink.url, quotedPermalink.expanded);
+    }
+
+    let expandedText = text;
+    [...mappings.entries()]
+        .sort(([left], [right]) => right.length - left.length)
+        .forEach(([shortUrl, expandedUrl]) => {
+            expandedText = expandedText.split(shortUrl).join(expandedUrl);
+        });
+    return expandedText;
+}
+
+function resolveTweetText(tweet, legacy) {
+    const noteTweetResult = tweet?.note_tweet?.note_tweet_results?.result;
+    const text = tweet?.note_tweet?.is_expandable && noteTweetResult?.text
+        ? noteTweetResult.text
+        : (legacy?.full_text || '');
+    return expandTweetTextUrls(text, tweet, legacy, noteTweetResult);
+}
+
 function convertToCSV(data) {
     const headers = ['日付', 'ユーザー名', 'ユーザーID', 'ツイート内容', 'いいね数', 'RT数', 'URL'];
     const rows = [headers.join(',')];
@@ -133,10 +180,7 @@ function convertToCSV(data) {
                 const resolvedName = (userCore.name || userLegacy.name || '').replace(/"/g, '""');
                 const resolvedScreenName = userCore.screen_name || userLegacy.screen_name || '';
 
-                let tweetText = legacy.full_text || '';
-                if (tweet.note_tweet?.is_expandable && tweet.note_tweet?.note_tweet_results?.result?.text) {
-                    tweetText = tweet.note_tweet.note_tweet_results.result.text;
-                }
+                const tweetText = resolveTweetText(tweet, legacy);
 
                 const row = [
                     `"${new Date(legacy.created_at).toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})}"`,
@@ -170,10 +214,7 @@ function convertToText(data) {
                 const resolvedName = userCore.name || userLegacy.name || '';
                 const resolvedScreenName = userCore.screen_name || userLegacy.screen_name || '';
 
-                let tweetText = legacy.full_text || '';
-                if (tweet.note_tweet?.is_expandable && tweet.note_tweet?.note_tweet_results?.result?.text) {
-                    tweetText = tweet.note_tweet.note_tweet_results.result.text;
-                }
+                const tweetText = resolveTweetText(tweet, legacy);
 
                 text += `${index + 1}. ${resolvedName} (@${resolvedScreenName})\n`;
                 text += `日時: ${new Date(legacy.created_at).toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})}\n`;
@@ -247,10 +288,7 @@ function convertToMarkdown(item) {
         });
     }
 
-    let tweetText = legacy.full_text || '';
-    if (tweet.note_tweet?.is_expandable && tweet.note_tweet?.note_tweet_results?.result?.text) {
-        tweetText = tweet.note_tweet.note_tweet_results.result.text;
-    }
+    const tweetText = resolveTweetText(tweet, legacy);
 
     let markdown = `---\n`;
     markdown += `twi_isSensitiveMedia:\n`;
