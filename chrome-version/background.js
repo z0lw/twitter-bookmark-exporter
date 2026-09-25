@@ -7,7 +7,9 @@ importScripts('converter.js');
 let credentials = {};
 let bookmarksURL = null;
 let isDownloading = false;
+let downloadAll = false;
 let bookmarks = [];
+let bookmarkIds = new Set();
 let currentTab = null;
 let currentAccountInfo = null;
 const BOOKMARKS_PAGE_URL = "https://x.com/i/history";
@@ -28,7 +30,30 @@ function getDefaultDate() {
 }
 
 function getBookmarkTimeline(response) {
-  return response.data.bookmark_timeline_v2 || response.data.bookmark_collection_timeline;
+  return response?.data?.bookmark_timeline_v2 || response?.data?.bookmark_collection_timeline;
+}
+
+function getBookmarkEntries(response) {
+  return getBookmarkTimeline(response)?.timeline?.instructions?.flatMap(
+    instruction => instruction.entries || (instruction.entry ? [instruction.entry] : [])
+  ) || [];
+}
+
+function getTweetId(entry) {
+  let tweet = entry?.content?.itemContent?.tweet_results?.result;
+  if (tweet?.__typename === 'TweetWithVisibilityResults') tweet = tweet.tweet;
+  return tweet?.rest_id || null;
+}
+
+function uniqueBookmarks(entries) {
+  const seen = new Set();
+  return entries.filter(entry => {
+    const id = getTweetId(entry);
+    if (!id) return true;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 function computeAccountKey(info) {
@@ -101,7 +126,17 @@ function updateLastExportTimestamp(exportTimestamp) {
 }
 
 // メッセージリスナー
-chrome.runtime.onMessage.addListener(async function(message, sender, sendResponse) {
+chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
+  handleMessage(message, sender, sendResponse).then(result => {
+    if (message.action !== "get_bookmarks" && message.action !== "get_account_info") sendResponse(result);
+  }).catch(error => {
+    console.error("Message handling failed:", error);
+    if (message.action !== "get_bookmarks" && message.action !== "get_account_info") sendResponse({error: String(error)});
+  });
+  return true;
+});
+
+async function handleMessage(message, sender, sendResponse) {
   if (message.action === "start_download") {
     if (sender.tab && isBookmarksPage(sender.tab.url)) {
       currentTab = sender.tab;
@@ -129,8 +164,8 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
     }
     return true;
   } else if (message.action === "fetch_page") {
-    let entries = getBookmarkTimeline(message.page).timeline.instructions[0].entries || [];
-    let filteredEntries = entries.filter(entry => !entry.entryId.startsWith("cursor-"));
+    let entries = getBookmarkEntries(message.page);
+    let filteredEntries = entries.filter(entry => entry?.entryId && !entry.entryId.startsWith("cursor-"));
     console.log('📦 Received page with', entries.length, 'entries, filtered to', filteredEntries.length, 'bookmarks');
     
     // 制限チェック：設定された件数に到達していたら残りをカットする
@@ -143,9 +178,15 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
       lastExportTimestampMap: {}
     });
     
+    if (downloadAll) {
+      settings.countLimit = 'all';
+      settings.dateLimit = 'all';
+    }
+
     // 日付フィルタリング: 古いツイートを個別に除外
     // since_last_export の場合は dateLimit を last_export として扱う
     const effectiveDateLimit = settings.countLimit === 'since_last_export' ? 'last_export' : settings.dateLimit;
+    let reachedDateLimit = false;
 
     if (effectiveDateLimit !== 'all') {
       let cutoffDate;
@@ -183,17 +224,18 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
 
         // フィルタリング前に、古いツイートがあるかチェック（停止判定用）
         const hasOldEntries = filteredEntries.some(entry => {
-          const entryTimestamp = Number(BigInt(entry.sortIndex) >> BigInt(20));
-          return entryTimestamp < cutoffTimestamp;
+          const entryTimestamp = entry.sortIndex ? Number(BigInt(entry.sortIndex) >> 20n) : null;
+          return entryTimestamp !== null && entryTimestamp < cutoffTimestamp;
         });
 
         filteredEntries = filteredEntries.filter(entry => {
-          const entryTimestamp = Number(BigInt(entry.sortIndex) >> BigInt(20));
-          return entryTimestamp >= cutoffTimestamp;
+          const entryTimestamp = entry.sortIndex ? Number(BigInt(entry.sortIndex) >> 20n) : null;
+          return entryTimestamp === null || entryTimestamp >= cutoffTimestamp;
         });
         console.log('📅 Date filtered from', originalCount, 'to', filteredEntries.length, 'entries (cutoff:', cutoffDate.toISOString(), ')');
 
         // 古いツイートが見つかった場合、これ以上取得する必要がないので停止信号を送る
+        reachedDateLimit = hasOldEntries;
         if (hasOldEntries && currentTab) {
           console.log('📅 Found entries older than cutoff, signaling content script to stop');
           chrome.tabs.sendMessage(currentTab.id, {action: "stop_download", reason: "date_limit_reached"});
@@ -201,47 +243,29 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
       }
     }
     
-    // 件数制限チェック（since_last_export の場合は件数制限なし）
-    if (settings.countLimit !== 'all' && settings.countLimit !== 'since_last_export') {
-      const maxCount = settings.countLimit === 'custom' ? settings.customCount : parseInt(settings.countLimit);
-      const currentCount = bookmarks.length;
-      const remainingSlots = maxCount - currentCount;
-
-      if (remainingSlots <= 0) {
-        console.log('📊 Already reached limit, ignoring this page');
-        return;
-      } else if (filteredEntries.length > remainingSlots) {
-        filteredEntries = filteredEntries.slice(0, remainingSlots);
-        console.log('📊 Limited entries to', filteredEntries.length, 'to fit remaining slots');
-      }
-    }
-    
-    bookmarks = bookmarks.concat(filteredEntries);
-    
-    // 重複を除外してユニークなブックマーク数をカウント（すべて含む）
-    const uniqueBookmarks = bookmarks.filter((bookmark, index, array) => {
-      if (bookmark.content?.itemContent?.tweet_results?.result?.rest_id) {
-        const tweetId = bookmark.content.itemContent.tweet_results.result.rest_id;
-        return array.findIndex(b => b.content?.itemContent?.tweet_results?.result?.rest_id === tweetId) === index;
-      }
-      return true; // IDがない場合は残す
+    // ページを追加する前に重複を除き、件数制限を正確に適用する。
+    filteredEntries = filteredEntries.filter(entry => {
+      const id = getTweetId(entry);
+      if (!id || bookmarkIds.has(id)) return false;
+      bookmarkIds.add(id);
+      return true;
     });
-    
-    // バッジにユニークカウント表示
-    chrome.action.setBadgeText({text: uniqueBookmarks.length.toString()});
-    console.log('📊 Total bookmarks:', bookmarks.length, '(unique:', uniqueBookmarks.length, ')');
-    
-    // 制限に達したら強制停止をcontent scriptに通知（finish_downloadは送信しない）
-    // since_last_export の場合は件数制限なし（日付制限で停止）
     if (settings.countLimit !== 'all' && settings.countLimit !== 'since_last_export') {
       const maxCount = settings.countLimit === 'custom' ? settings.customCount : parseInt(settings.countLimit);
-      if (uniqueBookmarks.length >= maxCount) {
-        console.log('📊 Reached unique count limit in background, signaling content script to stop');
+      filteredEntries = filteredEntries.slice(0, Math.max(0, maxCount - bookmarks.length));
+    }
+    bookmarks.push(...filteredEntries);
+    chrome.action.setBadgeText({text: String(bookmarks.length)});
+
+    if (settings.countLimit !== 'all' && settings.countLimit !== 'since_last_export') {
+      const maxCount = settings.countLimit === 'custom' ? settings.customCount : parseInt(settings.countLimit);
+      if (bookmarks.length >= maxCount && currentTab) {
         chrome.tabs.sendMessage(currentTab.id, {action: "stop_download", reason: "count_limit_reached"});
-        // returnしてこのページの処理を終了
-        return;
       }
     }
+    return {count: bookmarks.length, stop: reachedDateLimit ||
+      (settings.countLimit !== 'all' && settings.countLimit !== 'since_last_export' &&
+       bookmarks.length >= (settings.countLimit === 'custom' ? settings.customCount : parseInt(settings.countLimit)))};
   } else if (message.action === "finish_download") {
     if (isDownloading) { // ダウンロード中でない場合は無視
       // 少し待ってから処理を開始（進行中のfetch_pageを待つため）
@@ -249,13 +273,7 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
         isDownloading = false;
         chrome.action.setBadgeText({text: ""});
         // 最終的に重複を除外したユニークなブックマークを保存（すべて含む）
-        const finalBookmarks = bookmarks.filter((bookmark, index, array) => {
-          if (bookmark.content?.itemContent?.tweet_results?.result?.rest_id) {
-            const tweetId = bookmark.content.itemContent.tweet_results.result.rest_id;
-            return array.findIndex(b => b.content?.itemContent?.tweet_results?.result?.rest_id === tweetId) === index;
-          }
-          return true; // IDがない場合は残す
-        });
+        const finalBookmarks = uniqueBookmarks(bookmarks);
         
         const finalCount = finalBookmarks.length;
         console.log('✅ Finishing download with', bookmarks.length, 'total bookmarks (', finalCount, 'unique)');
@@ -272,7 +290,7 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
           console.log('💾 Bookmarks saved to storage, count:', finalCount);
           
           // 前回エクスポート日時を設定に記録
-          updateLastExportTimestamp(exportTimestamp).then(() => {
+          if (message.complete !== false) updateLastExportTimestamp(exportTimestamp).then(() => {
             console.log('📅 Export timestamp saved:', new Date(exportTimestamp).toISOString(), 'for', getAccountKey());
             if (currentAccountInfo) {
               currentAccountInfo.lastExportTimestamp = exportTimestamp;
@@ -297,6 +315,7 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
 
             // リセット
             bookmarks = [];
+            bookmarkIds.clear();
           });
         });
       }, 100); // 100ms待機
@@ -305,11 +324,10 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
     }
   } else if (message.action === "abort") {
     isDownloading = false;
+    downloadAll = false;
+    bookmarks = [];
+    bookmarkIds.clear();
     chrome.action.setBadgeText({text: ""});
-    if (currentTab) {
-      chrome.tabs.remove(currentTab.id);
-      currentTab = null;
-    }
   } else if (message.action === "fetch_error") {
     console.log("Fetch error:", message.errors);
   } else if (message.action === "partial_fetch_error") {
@@ -319,7 +337,7 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
   } else if (message.action === "download_all") {
     // 全件出力専用（停止条件なし）
     console.log('🚀 Background: download_all received');
-    startDownload(null, null);
+    startDownload(null, null, true);
   } else if (message.action === "popup_download_all") {
     // ポップアップからのダウンロード開始（設定に基づく制限あり）
     console.log('🚀 Background: popup_download_all received');
@@ -351,12 +369,12 @@ chrome.runtime.onMessage.addListener(async function(message, sender, sendRespons
   }
   
   return true;
-});
+}
 
 // バッジ色設定
 chrome.action.setBadgeBackgroundColor({color: "#1CA8FE"});
 
-const startDownload = async (event, stopSortIndex = null) => {
+const startDownload = async (event, stopSortIndex = null, forceAll = false) => {
   console.log('Starting download with stopSortIndex:', stopSortIndex);
   console.log('🔍 Current state - isDownloading:', isDownloading, 'credentials:', Object.keys(credentials).length, 'bookmarksURL:', bookmarksURL, 'currentTab:', currentTab?.id);
   
@@ -368,6 +386,10 @@ const startDownload = async (event, stopSortIndex = null) => {
     customDate: getDefaultDate()
   });
   
+  if (forceAll) {
+    settings.countLimit = 'all';
+    settings.dateLimit = 'all';
+  }
   console.log('📋 Loaded settings:', settings);
   
   // 停止条件を計算
@@ -396,9 +418,11 @@ const startDownload = async (event, stopSortIndex = null) => {
     return;
   }
   
-  if (Object.keys(credentials).length === 2 && bookmarksURL && currentTab) {
+  downloadAll = forceAll;
+  if (Object.keys(credentials).length === 2 && bookmarksURL && isBookmarksPage(currentTab?.url)) {
     isDownloading = true;
     bookmarks = []; // 確実にリセット
+    bookmarkIds.clear();
     console.log('🧹 Reset bookmarks array before download');
     console.log('✅ Sending iconClicked message to tab:', currentTab.id);
     chrome.tabs.sendMessage(currentTab.id, {
@@ -425,12 +449,24 @@ const startDownload = async (event, stopSortIndex = null) => {
       }
     });
   } else {
+    bookmarksURL = null;
     chrome.tabs.create({url: BOOKMARKS_PAGE_URL}, (tab) => {
+      if (chrome.runtime.lastError || !tab) {
+        console.error('Could not open bookmarks page:', chrome.runtime.lastError);
+        return;
+      }
       currentTab = tab;
+      let attempts = 0;
       let checkInterval = setInterval(() => {
+        if (++attempts > 40) {
+          clearInterval(checkInterval);
+          console.error('Timed out waiting for a bookmarks request');
+          return;
+        }
         if (Object.keys(credentials).length === 2 && bookmarksURL) {
           isDownloading = true;
-          bookmarks = []; // 確実にリセット
+          bookmarks = [];
+          bookmarkIds.clear();
           console.log('🧹 Reset bookmarks array before download (new tab)');
           chrome.tabs.sendMessage(currentTab.id, {
             action: "iconClicked",
@@ -470,7 +506,7 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
 
 // ブックマークURLの取得（カーソルを除去して最初から開始）
 chrome.webRequest.onBeforeRequest.addListener((details) => {
-  if (details.url.includes("Bookmarks")) {
+  if (/\/Bookmarks(?:\?|$)/.test(details.url)) {
     // カーソルパラメータを除去して最初から開始するためのクリーンなURLを保存
     let cleanURL = details.url;
     try {
