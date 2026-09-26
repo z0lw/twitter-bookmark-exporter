@@ -292,6 +292,7 @@ async function handleContentMessage(message, sender, sendResponse) {
 async function fetchBookmarkPage(cursor, credentials, bookmarksURL) {
   const url = new URL(bookmarksURL);
   const variables = JSON.parse(url.searchParams.get('variables') || '{}');
+  variables.count = 200;
   if (cursor) variables.cursor = cursor;
   else delete variables.cursor;
   url.searchParams.set('variables', JSON.stringify(variables));
@@ -310,37 +311,3 @@ async function fetchBookmarkPage(cursor, credentials, bookmarksURL) {
   if (!response.ok) throw new Error("HTTP " + response.status);
   return response.json();
 }
-
-// X の履歴ヘッダーは SPA 遷移で作り直されるため、表示されるたびにボタンを確認する。
-let exportButtonCheckScheduled = false;
-function ensureExportButtons() {
-  exportButtonCheckScheduled = false;
-  if (!/^\/i\/(?:history|bookmarks)(?:\/|$)/.test(location.pathname)) return;
-  const searchButton = document.querySelector(
-    '[data-testid="primaryColumn"] button[aria-label="ブックマークを検索"], [data-testid="primaryColumn"] button[aria-label="Search Bookmarks"]'
-  );
-  const container = searchButton?.parentElement?.parentElement;
-  if (!container || container.querySelector('[data-bookmark-export-button]')) return;
-
-  for (const [label, action, color] of [
-    ['全件エクスポート', 'download_all', '#1d9bf0'],
-    ['エクスポート', 'start_download', 'transparent']
-  ]) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.dataset.bookmarkExportButton = action;
-    button.setAttribute('aria-label', label);
-    button.title = label;
-    button.textContent = action === 'download_all' ? '⇧' : '↗';
-    button.style.cssText = 'width:32px;height:32px;margin-right:6px;border:1px solid #1d9bf0;border-radius:50%;color:white;background:' + color + ';cursor:pointer;font-size:20px;';
-    button.addEventListener('click', () => chrome.runtime.sendMessage({action}));
-    container.insertBefore(button, searchButton.parentElement);
-  }
-}
-function scheduleExportButtonCheck() {
-  if (exportButtonCheckScheduled) return;
-  exportButtonCheckScheduled = true;
-  requestAnimationFrame(ensureExportButtons);
-}
-new MutationObserver(scheduleExportButtonCheck).observe(document.documentElement, {childList: true, subtree: true});
-scheduleExportButtonCheck();

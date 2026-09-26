@@ -7,7 +7,6 @@ importScripts('converter.js');
 let credentials = {};
 let bookmarksURL = null;
 let isDownloading = false;
-let downloadAll = false;
 let bookmarks = [];
 let bookmarkIds = new Set();
 let currentTab = null;
@@ -137,12 +136,7 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
 });
 
 async function handleMessage(message, sender, sendResponse) {
-  if (message.action === "start_download") {
-    if (sender.tab && isBookmarksPage(sender.tab.url)) {
-      currentTab = sender.tab;
-    }
-    startDownload();
-  } else if (message.action === "set_account_info") {
+  if (message.action === "set_account_info") {
     if (message.accountInfo && (message.accountInfo.userId || message.accountInfo.screenName)) {
       const suffix = message.accountInfo.folderSuffix || (message.accountInfo.userId ? message.accountInfo.userId.slice(-4) : null);
       currentAccountInfo = {
@@ -178,11 +172,6 @@ async function handleMessage(message, sender, sendResponse) {
       lastExportTimestampMap: {}
     });
     
-    if (downloadAll) {
-      settings.countLimit = 'all';
-      settings.dateLimit = 'all';
-    }
-
     // 日付フィルタリング: 古いツイートを個別に除外
     // since_last_export の場合は dateLimit を last_export として扱う
     const effectiveDateLimit = settings.countLimit === 'since_last_export' ? 'last_export' : settings.dateLimit;
@@ -324,7 +313,6 @@ async function handleMessage(message, sender, sendResponse) {
     }
   } else if (message.action === "abort") {
     isDownloading = false;
-    downloadAll = false;
     bookmarks = [];
     bookmarkIds.clear();
     chrome.action.setBadgeText({text: ""});
@@ -334,10 +322,6 @@ async function handleMessage(message, sender, sendResponse) {
     console.log("Partial fetch error:", message.payload);
   } else if (message.action === "sync_newly") {
     startDownload(null, message.stopSortIndex);
-  } else if (message.action === "download_all") {
-    // 全件出力専用（停止条件なし）
-    console.log('🚀 Background: download_all received');
-    startDownload(null, null, true);
   } else if (message.action === "popup_download_all") {
     // ポップアップからのダウンロード開始（設定に基づく制限あり）
     console.log('🚀 Background: popup_download_all received');
@@ -374,7 +358,7 @@ async function handleMessage(message, sender, sendResponse) {
 // バッジ色設定
 chrome.action.setBadgeBackgroundColor({color: "#1CA8FE"});
 
-const startDownload = async (event, stopSortIndex = null, forceAll = false) => {
+const startDownload = async (event, stopSortIndex = null) => {
   console.log('Starting download with stopSortIndex:', stopSortIndex);
   console.log('🔍 Current state - isDownloading:', isDownloading, 'credentials:', Object.keys(credentials).length, 'bookmarksURL:', bookmarksURL, 'currentTab:', currentTab?.id);
   
@@ -386,10 +370,6 @@ const startDownload = async (event, stopSortIndex = null, forceAll = false) => {
     customDate: getDefaultDate()
   });
   
-  if (forceAll) {
-    settings.countLimit = 'all';
-    settings.dateLimit = 'all';
-  }
   console.log('📋 Loaded settings:', settings);
   
   // 停止条件を計算
@@ -418,7 +398,6 @@ const startDownload = async (event, stopSortIndex = null, forceAll = false) => {
     return;
   }
   
-  downloadAll = forceAll;
   if (Object.keys(credentials).length === 2 && bookmarksURL && isBookmarksPage(currentTab?.url)) {
     isDownloading = true;
     bookmarks = []; // 確実にリセット
