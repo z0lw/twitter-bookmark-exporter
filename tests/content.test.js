@@ -51,7 +51,7 @@ function runContent(file, responses) {
   };
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), context, {filename: file});
   const bookmarksURL = 'https://x.com/i/api/graphql/abc/Bookmarks?variables=' +
-    encodeURIComponent(JSON.stringify({count: 40, includePromotedContent: false})) +
+    encodeURIComponent(JSON.stringify({count: 20, includePromotedContent: false})) +
     '&features=%7B%22flag%22%3Atrue%7D&fieldToggles=%7B%22x%22%3Atrue%7D';
   const request = {action: 'iconClicked', bookmarksURL, creds: {authorization:'test', 'x-csrf-token':'test'}, otherConfig: {wait_interval_ms:50}};
   const invoked = listener(request, {}, () => {});
