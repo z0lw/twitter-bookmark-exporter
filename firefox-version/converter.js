@@ -292,6 +292,7 @@ function convertToMarkdown(item) {
 
     let markdown = `---\n`;
     markdown += `twi_isSensitiveMedia:\n`;
+    markdown += `tags: []\n`;
     markdown += `Date: ${createdAt}\n`;
     markdown += `twi_ProfileName: ${yamlString(resolvedProfileName)}\n`;
     markdown += `twi_ScreenName: ${yamlString(resolvedScreenName)}\n`;
