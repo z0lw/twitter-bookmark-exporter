@@ -135,10 +135,31 @@ chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {
   return true;
 });
 
+// 同じアカウントの出力先フォルダ名を固定する。
+// ユーザー名を取得できた時はそれを記録し、取得できない画面ではID末尾ではなく記録済みの名前を使う。
+async function resolveAccountFolderSuffix(accountInfo) {
+  const sanitizeSuffix = (value) => String(value || '').replace(/[^a-zA-Z0-9_\-]/g, '');
+  const userId = accountInfo.userId ? String(accountInfo.userId) : null;
+  const screenSuffix = sanitizeSuffix(accountInfo.screenName);
+  const stored = await chrome.storage.local.get({accountFolderSuffixes: {}});
+  const map = Object.assign({}, stored.accountFolderSuffixes || {});
+  if (screenSuffix) {
+    if (userId && map[userId] !== screenSuffix) {
+      map[userId] = screenSuffix;
+      await chrome.storage.local.set({accountFolderSuffixes: map});
+    }
+    return screenSuffix;
+  }
+  if (userId && map[userId]) {
+    return map[userId];
+  }
+  return sanitizeSuffix(accountInfo.folderSuffix) || (userId ? userId.slice(-4) : null);
+}
+
 async function handleMessage(message, sender, sendResponse) {
   if (message.action === "set_account_info") {
     if (message.accountInfo && (message.accountInfo.userId || message.accountInfo.screenName)) {
-      const suffix = message.accountInfo.folderSuffix || (message.accountInfo.userId ? message.accountInfo.userId.slice(-4) : null);
+      const suffix = await resolveAccountFolderSuffix(message.accountInfo);
       currentAccountInfo = {
         userId: message.accountInfo.userId || null,
         screenName: message.accountInfo.screenName || null,

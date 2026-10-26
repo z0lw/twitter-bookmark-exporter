@@ -19,6 +19,17 @@ function delay(ms) {
 
 const sanitize = (value) => String(value).replace(/[^a-zA-Z0-9_\-]/g, '');
 
+// Xのユーザー名は英数字と_のみ。/44m9/all のようなプロフィール内パスから先頭だけを取り出す
+function normalizeHandle(value) {
+  const handle = String(value || '').trim();
+  return /^[A-Za-z0-9_]{1,15}$/.test(handle) ? handle : null;
+}
+
+function extractHandleFromPath(pathname) {
+  const first = String(pathname || '').split('/').filter(Boolean)[0] || '';
+  return normalizeHandle(first);
+}
+
 function getAccountFingerprint(info) {
   if (!info) return 'null';
   return `${info.userId || ''}|${info.screenName || ''}`;
@@ -85,7 +96,7 @@ function extractAccountInfo() {
       const profileLink = document.querySelector('a[role="link"][data-testid="AppTabBar_Profile_Link"]');
       if (profileLink && profileLink.href) {
         const path = new URL(profileLink.href, location.origin).pathname;
-        const handle = path.replace(/^\/+/, '');
+        const handle = extractHandleFromPath(path);
         if (handle) {
           info.screenName = handle;
           hasInfo = true;
@@ -94,8 +105,9 @@ function extractAccountInfo() {
       if (!info.screenName) {
         const handleElement = Array.from(document.querySelectorAll('div[data-testid="SideNav_AccountSwitcher_Button"] span'))
           .find(el => el.textContent && el.textContent.trim().startsWith('@'));
-        if (handleElement) {
-          info.screenName = handleElement.textContent.trim().replace(/^@/, '');
+        const handle = handleElement ? normalizeHandle(handleElement.textContent.trim().replace(/^@/, '')) : null;
+        if (handle) {
+          info.screenName = handle;
           hasInfo = true;
         }
       }
